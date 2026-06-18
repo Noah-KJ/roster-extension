@@ -3,6 +3,8 @@
 // 純 DOM 操作工具
 // ════════════════════════════════════════════
 
+import { TAIWAN_REGIONS } from '../constants.js';
+
 /** 開啟 modal */
 export function openModal(id) {
   document.getElementById(id)?.classList.add('open');
@@ -74,7 +76,7 @@ export function fillSelect(selectId, options, selectedValue = '', placeholder = 
 }
 
 /**
- * 折疊/展開 card（點 header 切換 .is-open）
+ * 折疊/展開 card（點 header 切換 .is-open，且同一時間只能展開一個）
  */
 export function setupCardToggles(scopeSelector, cleanups) {
   const scope = document.querySelector(scopeSelector);
@@ -89,7 +91,24 @@ export function setupCardToggles(scopeSelector, cleanups) {
       event.target.closest('select')               ||
       event.target.closest('input[type="number"]')
     ) return;
-    event.currentTarget.closest('.card')?.classList.toggle('is-open');
+
+    const currentCard = event.currentTarget.closest('.card');
+    if (!currentCard) return;
+
+    // 1. 先檢查當前點擊的 card 是否已經是展開狀態
+    const isAlreadyOpen = currentCard.classList.contains('is-open');
+
+    // 2. 💡 如果接下來是要「展開」（原本是收合的），就把 scope 內「其他」所有 card 都收合
+    if (!isAlreadyOpen) {
+      scope.querySelectorAll('.card').forEach(card => {
+        if (card !== currentCard) {
+          card.classList.remove('is-open');
+        }
+      });
+    }
+
+    // 3. 最後切換當前點擊的 card 狀態
+    currentCard.classList.toggle('is-open');
   };
 
   scope.querySelectorAll('.card-header').forEach(header => {
@@ -107,4 +126,23 @@ export function debounce(fn, delay = 500) {
     clearTimeout(timer);
     timer = setTimeout(() => fn(...args), delay);
   };
+}
+
+export function fillRegionSelects(city, dist, pageCleanups) {
+  // 1. 初始化：填充縣市，並清空鄉鎮市區
+  const cities = Object.keys(TAIWAN_REGIONS);
+  fillSelect(city, cities);
+  fillSelect(dist, TAIWAN_REGIONS[cities[0]] );
+
+  // 2. 安全綁定：使用 bindEl 監聽縣市切換
+  bindEl(city, 'change', (e) => {
+    const selectedCity = e.target.value; 
+
+    if (selectedCity && TAIWAN_REGIONS[selectedCity]) {
+      const districts = TAIWAN_REGIONS[selectedCity];
+      fillSelect(dist, districts);
+    } else {
+      fillSelect(dist, [], '', '先選縣市');
+    }
+  }, pageCleanups);
 }

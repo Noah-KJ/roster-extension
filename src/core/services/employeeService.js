@@ -1,62 +1,55 @@
- // ════════════════════════════════════════════
+// ════════════════════════════════════════════
 // core/services/employeeService.js
 // 人員純計算——不碰 DOM / storage
 // ════════════════════════════════════════════
 
 /**
- * 取得可預排的據點候選清單（純計算版）
- * 原 data.js 的 getArrangedCandidates() DOM 讀取部分已移至 employeeTab.js，
- * 計算邏輯集中在此。
+ * 取得可預排的據點候選清單
+ * 考量人員班段、掌握勤務、禁排、已預排
  *
  * @param {object} params
- * @param {Site[]}     params.sites
- * @param {string}     params.empShift      - ''日班' | '夜班' |  '日/夜'
- * @param {string[]}   params.empDuties     - 已勾選的勤務
- * @param {boolean}    params.isReg
- * @param {string[]}   params.forbiddenIds  - 禁排的 siteId[]
- * @param {Array}      params.alreadyArranged - [{ siteId, duties[] }]（modal 內已預排）
- * @returns {{ site: Site, availableDuties: string[] }[]}
+ * @param {Site[]}   params.sites
+ * @param {string}   params.empShift      - '日班' | '夜班' | '日/夜'
+ * @param {string[]} params.empDuties     - 已勾選的勤務
+ * @param {string}   params.mobility      - '正班' | '機動'
+ * @param {string[]} params.forbSiteIds   - 禁排的 siteId[]（目前從 site.forbEmp 反查）
+ * @param {Array}    params.alreadyArr    - 已預排 [{ siteId, shift, duty }]
+ * @returns {{ site: Site, shift: string, duty: string }[]}
  */
-
-import { SHIFT } from '../../shared/constants.js';
-export function getArrangedCandidates({
+export function getArrSiteCandidates({
   sites,
   empShift,
   empDuties,
   mobility,
   forbSiteIds,
-  alreadyArrSites,
+  alreadyArr,
 }) {
-  const forbidSet    = new Set(forbSiteIds);
-  const checkPeriods = empShift === '日班' ? ['day']
-                     : empShift === '夜班' ? ['night']
-                     : ['day', 'night'];
-  const result = [];
+  const forbidSet = new Set(forbSiteIds);
+  const shifts    = empShift === '日/夜' ? ['日班', '夜班'] : [empShift];
+  const result    = [];
 
   for (const site of sites) {
     if (forbidSet.has(site.id)) continue;
 
-    const matchingDuties = new Set();
+    for (const shift of shifts) {
+      for (const d of (site.duties ?? [])) {
+        if (d.shift !== shift)              continue;
+        if (!empDuties.includes(d.duty))   continue;
 
-    for (const period of checkPeriods) {
-      for (const shift of (site.shifts[period] ?? [])) {
-        if (!empDuties.includes(shift.duty)) continue;
-
+        // 正班：檢查剩餘名額（扣掉 modal 內已預排）
         if (mobility === '正班') {
-          // 正班：用 last 判斷，再扣掉 modal 內已預排的數量
-          const modalUsed = alreadyArrSites
-            .filter(a => a.siteId === site.id && a.duty === shift.duty)
-            .length;
-          if (shift.last - modalUsed > 0) matchingDuties.add(shift.duty);
-        } else {
-          // 機動：不受滿員限制
-          matchingDuties.add(shift.duty);
+          const modalUsed = alreadyArr.filter(
+            a => a.siteId === site.id && a.shift === shift && a.duty === d.duty
+          ).length;
+          if ((d.last ?? d.count) - modalUsed <= 0) continue;
         }
-      }
-    }
 
-    if (matchingDuties.size > 0) {
-      result.push({ site, availableDuties: [...matchingDuties] });
+        // 避免重複加入同一組合
+        const duplicate = alreadyArr.some(
+          a => a.siteId === site.id && a.shift === shift && a.duty === d.duty
+        );
+        if (!duplicate) result.push({ site, shift, duty: d.duty });
+      }
     }
   }
 

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "Noah排班",
-  "version": "2.0.0",
+  "name": "排班引擎",
+  "version": "3.0.0",
   "description": "找Noah: pleroma502204@gmail.com",
 
   "permissions": [
@@ -17,7 +17,7 @@
 
   "action": {
     "default_popup": "popup/popup.html",
-    "default_title": "排班小幫手"
+    "default_title": "排班引擎"
   },
 
   "background": {

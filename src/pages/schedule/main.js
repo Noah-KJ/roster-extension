@@ -3,13 +3,12 @@
 // ════════════════════════════════════════════
 
 import {
-  getSettingsState, getSitesState,
-  getEmployeesState, getScheduleState, setScheduleState,
+  getSettingsState, getScheduleState, setScheduleState,
   subscribe, getDerived,
 } from '../../core/store/globalState.js';
 import { buildHolidaySet, isHoliday } from '../../core/services/holidayService.js';
-import { applyClick }                 from '../../core/services/scheduleEngine.js';
-import { DOW_ZH }                     from '../../shared/constants.js';
+import { applyClick, applyBigClick }  from '../../core/services/scheduleEngine.js';
+import { DOW_ZH, DEFAULT_ONDUTY_KEY } from '../../shared/constants.js';
 
 const _cleanups = [];
 let _holidaySet = new Set();
@@ -51,7 +50,6 @@ export function unmount() {
   _cleanups.length = 0;
 }
 
-// ── 月份標籤 ──────────────────────────────────
 function _updateMonthLabel() {
   const month = getSettingsState().month ?? '';
   const el    = document.getElementById('month-label');
@@ -65,7 +63,6 @@ function _rebuildHolidaySet() {
   _holidaySet = buildHolidaySet(s.month ?? '', s);
 }
 
-// ── Tab 切換 ──────────────────────────────────
 function _setupTabs() {
   document.querySelectorAll('#page-schedule .tab-nav .tab').forEach(btn => {
     const h = () => {
@@ -79,7 +76,6 @@ function _setupTabs() {
   });
 }
 
-// ── Selects ───────────────────────────────────
 function _populateSelects() {
   const { activeSites: sites, activeEmployees: employees } = getDerived();
 
@@ -88,7 +84,7 @@ function _populateSelects() {
     siteSel.innerHTML = '<option value="">跳至據點…</option>';
     for (const s of sites) {
       const opt = document.createElement('option');
-      opt.value = s.id; opt.textContent = s.name;
+      opt.value = s.id; opt.textContent = s.name[0];
       siteSel.appendChild(opt);
     }
     const h = () => {
@@ -118,7 +114,6 @@ function _populateSelects() {
   }
 }
 
-// ── 月份 meta ─────────────────────────────────
 function _getMonthMeta() {
   const month = getSettingsState().month ?? '';
   if (!month) return null;
@@ -127,8 +122,7 @@ function _getMonthMeta() {
 }
 
 /**
- * 通用：從陣列建立 { id → day } Map
- * 只收錄 dateField 落在 monthStr 內的項目
+ * { id → day } Map，只收錄 dateField 落在 monthStr 內的項目
  */
 function _buildDayMap(arr, dateField, monthStr) {
   const map = {};
@@ -140,35 +134,25 @@ function _buildDayMap(arr, dateField, monthStr) {
   return map;
 }
 
-function _getEmpDutyLabel(emp, siteId) {
-  const arr = emp.arrSites?.find(a => a.siteId === siteId);
-  return arr?.duty ?? '—';
-}
-
 // ── 格狀態 ────────────────────────────────────
 function _applyCellState(td, val, readonly = false) {
-  td.classList.remove('state-work', 'state-pending', 'state-leave', 'state-dash');
   const onDutyKey = getSettingsState().onDutyKey ?? DEFAULT_ONDUTY_KEY;
-
-  if (val === undefined)   { td.classList.add('state-pending'); td.textContent = ''; }
-  else if (val === 'work') { td.classList.add('state-work'); td.textContent = onDutyKey[0]; }
-  else if (val === 'dash') { td.classList.add('state-dash'); td.textContent = onDutyKey[1]; }
+  td.classList.remove('state-work', 'state-pending', 'state-leave', 'state-dash');
+  if (val === undefined)   { td.classList.add('state-pending'); td.textContent = onDutyKey[2] ?? ''; }
+  else if (val === 'work') { td.classList.add('state-work');    td.textContent = onDutyKey[0]; }
+  else if (val === 'dash') { td.classList.add('state-dash');    td.textContent = onDutyKey[1]; }
   else                     { td.classList.add('state-leave');   td.textContent = val; }
   if (readonly) td.style.pointerEvents = 'none';
 }
 
-/**
- * 套用格的特殊底色（區大日 > 假日，優先順序）
- * 回傳是否已套用特殊色（供呼叫方決定是否還要套假日色）
- */
-function _applyCellBg(td, isHol, isDistrictDay, isBlocked) {
+function _applyCellBg(td, isHol, isDistDay, isBlocked) {
   if (isBlocked) {
     td.classList.remove('col-holiday');
-    td.style.background   = '#111';
+    td.style.background    = '#111';
     td.style.pointerEvents = 'none';
     return;
   }
-  if (isDistrictDay) {
+  if (isDistDay) {
     td.classList.remove('col-holiday');
     td.style.background = 'rgba(255, 107, 107, 0.18)';
     return;
@@ -176,32 +160,33 @@ function _applyCellBg(td, isHol, isDistrictDay, isBlocked) {
   if (isHol) td.classList.add('col-holiday');
 }
 
-// ── 大班表（唯讀，總覽 tab）──────────────────
+// ── 大班表（可點擊）──────────────────────────
 export function renderBigTable() {
   const wrap = document.getElementById('big-wrap');
   if (!wrap) return;
   const meta = _getMonthMeta();
   if (!meta) { wrap.innerHTML = '<p class="empty-state">請先在設定頁選擇排班月份</p>'; return; }
 
-  const { y, m, days } = meta;
+  const { y, m, days }                           = meta;
   const { activeSites: sites, activeEmployees: employees } = getDerived();
-  const schedule     = getScheduleState();
-  const monthStr     = `${y}-${String(m).padStart(2, '0')}`;
+  const schedule   = getScheduleState();
+  const monthStr   = `${y}-${String(m).padStart(2, '0')}`;
   const resignDayMap = _buildDayMap(employees, 'lastDate', monthStr);
-  wrap.innerHTML     = '';
+  wrap.innerHTML   = '';
 
   const table = _makeTable('big-table', days);
-  _buildDateHeader(table, '大班表', y, m, days);
+  _buildDateHeader(table, '大班表', y, m, days, null);
 
   const tbody = document.createElement('tbody');
   for (const emp of employees) {
-    const tr = document.createElement('tr');
-    const labelTd = document.createElement('td');
+    const tr       = document.createElement('tr');
+    const labelTd  = document.createElement('td');
     labelTd.className   = 'row-label';
     labelTd.textContent = emp.name;
     tr.appendChild(labelTd);
 
     const resignDay = resignDayMap[emp.id] ?? null;
+    const hasArr    = (emp.arrSites ?? []).length > 0;
 
     for (let d = 1; d <= days; d++) {
       const hol       = isHoliday(_holidaySet, y, m, d);
@@ -217,13 +202,24 @@ export function renderBigTable() {
         for (const site of sites) {
           const v = schedule[site.id]?.[emp.id]?.[d];
           if (v === undefined) continue;
-          if (v === 'work')  { cellVal = site.name[2] || site.name[1]?.[0] || site.name[0]?.[0] || '?'; }
-          if (v === 'dash')  { continue; }
+          if (v === 'work')  {
+            cellVal   = site.name[2] || site.name[1]?.[0] || site.name[0]?.[0] || '?';
+            cellColor = 'var(--text2)';
+            break;
+          }
+          if (v === 'dash') continue;
           cellVal = v; break;
         }
         _applyCellBg(td, hol, false, false);
-        _applyCellState(td, cellVal || undefined, true);
+        _applyCellState(td, cellVal || undefined, !hasArr);
         if (cellColor) td.style.color = cellColor;
+
+        // 有預排據點的人員才能點擊循環
+        if (hasArr) {
+          td.style.cursor = 'pointer';
+          td.addEventListener('click',       () => _onBigCellClick({ empId: emp.id, day: d }));
+          td.addEventListener('contextmenu', e => { e.preventDefault(); _onBigCellClick({ empId: emp.id, day: d, direction: 'backward' }); });
+        }
       }
       tr.appendChild(td);
     }
@@ -240,33 +236,49 @@ export function renderCommunityTable() {
   const meta = _getMonthMeta();
   if (!meta) { wrap.innerHTML = '<p class="empty-state">請先在設定頁選擇排班月份</p>'; return; }
 
-  const { y, m, days } = meta;
+  const { y, m, days }                           = meta;
   const { activeSites: sites, activeEmployees: employees } = getDerived();
-  const schedule       = getScheduleState();
-  const monthStr       = `${y}-${String(m).padStart(2, '0')}`;
-  const districtDayMap = _buildDayMap(sites, 'HOADate', monthStr);
-  const resignDayMap   = _buildDayMap(employees, 'lastDate', monthStr);
-  wrap.innerHTML       = '';
+  const schedule   = getScheduleState();
+  const monthStr   = `${y}-${String(m).padStart(2, '0')}`;
+  const distDayMap = _buildDayMap(sites,     'HOADate',  monthStr);
+  const resignDayMap = _buildDayMap(employees, 'lastDate', monthStr);
+  wrap.innerHTML   = '';
 
   for (const site of sites) {
-    const siteData    = schedule[site.id] ?? {};
-    const districtDay = districtDayMap[site.id] ?? null;
-    const regularEmps = employees.filter(e => e.mobility === '正班' && e.arrSites?.some(a => a.siteId === site.id));
-    const flexEmps    = employees.filter(e => e.mobility === '機動' && e.arrSites?.some(a => a.siteId === site.id));
+    const siteData  = schedule[site.id] ?? {};
+    const distDay   = distDayMap[site.id] ?? null;
+
+    // 按 arrSites 的每個 { siteId, shift, duty } 找出對應員工
+    // 每個 (emp, shift, duty) 組合一行
+    const rows = [];
+    for (const emp of employees) {
+      const arr = (emp.arrSites ?? []).filter(a => a.siteId === site.id);
+      for (const a of arr) {
+        rows.push({ emp, shift: a.shift, duty: a.duty });
+      }
+    }
+
+    if (rows.length === 0) continue;
 
     const table = _makeTable(`site-table-${site.id}`, days);
-    _buildDateHeader(table, site.shortName || site.name, y, m, days, districtDay);
+    _buildDateHeader(table, site.name[1] || site.name[0], y, m, days, distDay);
 
     const tbody = document.createElement('tbody');
-    for (const emp of regularEmps) {
-      tbody.appendChild(_makeScheduleRow({ emp, siteId: site.id, siteData, y, m, days, districtDay, resignDayMap }));
+
+    // 正班先、機動後；同班別內按班段排序
+    const sorted = [
+      ...rows.filter(r => r.emp.mobility === '正班'),
+      ...rows.filter(r => r.emp.mobility !== '正班'),
+    ];
+
+    for (const { emp, shift, duty } of sorted) {
+      tbody.appendChild(_makeScheduleRow({
+        emp, siteId: site.id, siteData, y, m, days,
+        distDay, resignDayMap,
+        rowLabel: `${emp.name} ${shift} ${duty}`,
+      }));
     }
-    if (regularEmps.length > 0 && flexEmps.length > 0) {
-      tbody.appendChild(_makeSeparatorRow(days));
-    }
-    for (const emp of flexEmps) {
-      tbody.appendChild(_makeScheduleRow({ emp, siteId: site.id, siteData, y, m, days, districtDay, resignDayMap }));
-    }
+
     table.appendChild(tbody);
     wrap.appendChild(table);
   }
@@ -279,54 +291,36 @@ export function renderEmployeeTable() {
   const meta = _getMonthMeta();
   if (!meta) { wrap.innerHTML = '<p class="empty-state">請先在設定頁選擇排班月份</p>'; return; }
 
-  const { y, m, days } = meta;
+  const { y, m, days }                           = meta;
   const { activeSites: sites, activeEmployees: employees } = getDerived();
-  const schedule       = getScheduleState();
-  const monthStr       = `${y}-${String(m).padStart(2, '0')}`;
-  const districtDayMap = _buildDayMap(sites, 'HOADate', monthStr);
-  const resignDayMap   = _buildDayMap(employees, 'lastDate', monthStr);
-  wrap.innerHTML       = '';
+  const schedule   = getScheduleState();
+  const monthStr   = `${y}-${String(m).padStart(2, '0')}`;
+  const distDayMap = _buildDayMap(sites,     'HOADate',  monthStr);
+  const resignDayMap = _buildDayMap(employees, 'lastDate', monthStr);
+  wrap.innerHTML   = '';
 
   for (const emp of employees) {
-    const arrangedSites = sites.filter(s => emp.arrSites?.some(a => a.siteId === s.id));
-    if (arrangedSites.length === 0) continue;
-
-    const resignDay = resignDayMap[emp.id] ?? null;
+    const arrSites = emp.arrSites ?? [];
+    if (arrSites.length === 0) continue;
 
     const table = _makeTable(`emp-table-${emp.id}`, days);
     _buildDateHeader(table, emp.name, y, m, days, null);
 
     const tbody = document.createElement('tbody');
-    for (const site of arrangedSites) {
-      const siteData    = schedule[site.id] ?? {};
-      const districtDay = districtDayMap[site.id] ?? null;
-      const tr          = document.createElement('tr');
 
-      const labelTd = document.createElement('td');
-      labelTd.className   = 'row-label';
-      labelTd.textContent = `${site.shortName || site.name} ${_getEmpDutyLabel(emp, site.id)}`;
-      labelTd.title       = site.name;
-      tr.appendChild(labelTd);
+    for (const { siteId, shift, duty } of arrSites) {
+      const site     = sites.find(s => s.id === siteId);
+      if (!site) continue;
+      const siteData = schedule[siteId] ?? {};
+      const distDay  = distDayMap[siteId] ?? null;
 
-      for (let d = 1; d <= days; d++) {
-        const hol         = isHoliday(_holidaySet, y, m, d);
-        const isDistDay   = districtDay === d;
-        const isBlocked   = resignDay !== null && d > resignDay;
-        const td          = document.createElement('td');
-        td.className      = 'day-cell';
-
-        if (isBlocked) {
-          _applyCellBg(td, false, false, true);
-        } else {
-          _applyCellBg(td, hol, isDistDay, false);
-          _applyCellState(td, siteData[emp.id]?.[d]);
-          td.addEventListener('click',       () => _onCellClick({ empId: emp.id, siteId: site.id, day: d }));
-          td.addEventListener('contextmenu', e => { e.preventDefault(); _onCellClick({ empId: emp.id, siteId: site.id, day: d, direction: 'backward' }); });
-        }
-        tr.appendChild(td);
-      }
-      tbody.appendChild(tr);
+      tbody.appendChild(_makeScheduleRow({
+        emp, siteId, siteData, y, m, days,
+        distDay, resignDayMap,
+        rowLabel: `${site.name[1] || site.name[0]} ${shift} ${duty}`,
+      }));
     }
+
     table.appendChild(tbody);
     wrap.appendChild(table);
   }
@@ -334,25 +328,39 @@ export function renderEmployeeTable() {
 
 // ── 點擊格 ────────────────────────────────────
 async function _onCellClick({ empId, siteId, day, direction = 'forward' }) {
-  const emp = getEmployeesState().find(e => e.id === empId);
+  const { activeEmployees } = getDerived();
+  const emp = activeEmployees.find(e => e.id === empId);
   if (!emp) return;
   const newSchedule = applyClick({
     schedule:   getScheduleState(),
     siteId, empId, day, direction,
     leaveTypes: getSettingsState().leaveTypes ?? [],
-    stateWork: getSettingsState().onDutyKey?.[0] ?? '✔',
-    stateAsgnd: getSettingsState().onDutyKey?.[1] ?? '-',
     emp,
+  });
+  await setScheduleState(newSchedule);
+}
+
+// ── 大班表點擊 ────────────────────────────────
+async function _onBigCellClick({ empId, day, direction = 'forward' }) {
+  const { activeSites: sites, activeEmployees: employees } = getDerived();
+  const emp = employees.find(e => e.id === empId);
+  if (!emp) return;
+  const newSchedule = applyBigClick({
+    schedule:   getScheduleState(),
+    empId, day, direction,
+    leaveTypes: getSettingsState().leaveTypes ?? [],
+    emp,
+    sites,
   });
   await setScheduleState(newSchedule);
 }
 
 // ── DOM 輔助 ──────────────────────────────────
 function _makeTable(id, days) {
-  const table = document.createElement('table');
-  table.className        = 'schedule-table';
-  table.id               = id;
-  table.style.width      = `calc(var(--row-label) + ${days} * var(--cell-w))`;
+  const table          = document.createElement('table');
+  table.className      = 'schedule-table';
+  table.id             = id;
+  table.style.width    = `calc(var(--row-label) + ${days} * var(--cell-w))`;
   table.style.marginBottom = '32px';
   return table;
 }
@@ -369,9 +377,8 @@ function _buildDateHeader(table, cornerLabel, y, m, days, districtDay = null) {
     const hol       = isHoliday(_holidaySet, y, m, d);
     const isDistDay = districtDay === d;
     const th        = document.createElement('th');
-    // 區大日 > 假日，優先套紅色 header
     if (isDistDay) {
-      th.className = 'day-header';
+      th.className        = 'day-header';
       th.style.background = 'rgba(255, 107, 107, 0.3)';
       th.style.color      = '#ff8080';
     } else {
@@ -384,18 +391,18 @@ function _buildDateHeader(table, cornerLabel, y, m, days, districtDay = null) {
   table.appendChild(thead);
 }
 
-function _makeScheduleRow({ emp, siteId, siteData, y, m, days, districtDay, resignDayMap }) {
+function _makeScheduleRow({ emp, siteId, siteData, y, m, days, distDay, resignDayMap, rowLabel }) {
   const tr        = document.createElement('tr');
   const resignDay = resignDayMap?.[emp.id] ?? null;
 
-  const labelTd = document.createElement('td');
+  const labelTd       = document.createElement('td');
   labelTd.className   = 'row-label';
-  labelTd.textContent = `${emp.name} ${_getEmpDutyLabel(emp, siteId)}`;
+  labelTd.textContent = rowLabel;
   tr.appendChild(labelTd);
 
   for (let d = 1; d <= days; d++) {
     const hol       = isHoliday(_holidaySet, y, m, d);
-    const isDistDay = districtDay === d;
+    const isDistDay = distDay === d;
     const isBlocked = resignDay !== null && d > resignDay;
     const td        = document.createElement('td');
     td.className    = 'day-cell';
@@ -416,7 +423,7 @@ function _makeScheduleRow({ emp, siteId, siteData, y, m, days, districtDay, resi
 function _makeSeparatorRow(days) {
   const tr = document.createElement('tr');
   const td = document.createElement('td');
-  td.colSpan = days + 1;
+  td.colSpan       = days + 1;
   td.style.cssText = 'height:8px;background:transparent;border:none;';
   tr.appendChild(td);
   return tr;

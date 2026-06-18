@@ -5,10 +5,6 @@
 
 /**
  * 假別循環：undefined → 'work' → leave[0] → … → leave[n-1] → undefined
- *
- * @param {string|undefined} current
- * @param {string[]}         leaveTypes
- * @returns {string|undefined}
  */
 export function nextLeave(current, leaveTypes) {
   if (current === undefined)  return 'work';
@@ -32,7 +28,14 @@ export function prevLeave(current, leaveTypes) {
 }
 
 /**
- * 點擊格後，計算整個 schedule 的下一個狀態（immutable）
+ * 人員班表 / 社區班表 點擊格後，計算整個 schedule 的下一個狀態（immutable）
+ *
+ * 特殊規則：
+ *   - 點擊 'dash' 格 → 與該員工當天的 'work' 格互換（不走 nextLeave 循環）
+ *   - 其餘狀態走 nextLeave / prevLeave 線性循環
+ *   - 點擊產生 'work' 時，其他預排據點該天設為 'dash'
+ *   - 點擊產生假別時，其他預排據點該天同步設為該假別
+ *   - 清空時，其他預排據點該天一併清空
  *
  * @param {object} params
  * @param {object}   params.schedule
@@ -48,17 +51,40 @@ export function applyClick({ schedule, siteId, empId, day, leaveTypes, emp, dire
   const next = { ...schedule };
   const cur  = next[siteId]?.[empId]?.[day];
 
-  // dash 左右鍵都清空
-  let nextVal;
+  const otherSiteIds = (emp.arrSites ?? [])
+    .map(a => a.siteId)
+    .filter(id => id !== siteId);
+
+  // ── 特殊規則：點擊 dash 格 → 與 work 格互換 ──
   if (cur === 'dash') {
-    nextVal = undefined;
-  } else {
-    nextVal = direction === 'backward'
-      ? prevLeave(cur, leaveTypes)
-      : nextLeave(cur, leaveTypes);
+    // 找出該員工當天哪個據點是 'work'
+    const workSiteId = [siteId, ...otherSiteIds].find(
+      sid => next[sid]?.[empId]?.[day] === 'work'
+    );
+
+    if (workSiteId !== undefined) {
+      next[siteId] = { ...next[siteId] };
+      next[siteId][empId] = { ...next[siteId][empId] };
+      next[siteId][empId][day] = 'work';
+
+      next[workSiteId] = { ...next[workSiteId] };
+      next[workSiteId][empId] = { ...next[workSiteId][empId] };
+      next[workSiteId][empId][day] = 'dash';
+
+      return next;
+    }
+    // 若找不到 work 格（理論上不會發生），falls through 走一般清空
+    next[siteId] = { ...next[siteId] };
+    next[siteId][empId] = { ...next[siteId][empId] };
+    delete next[siteId][empId][day];
+    return next;
   }
 
-  // 寫入目標格
+  // ── 一般循環 ──
+  const nextVal = direction === 'backward'
+    ? prevLeave(cur, leaveTypes)
+    : nextLeave(cur, leaveTypes);
+
   next[siteId] = { ...next[siteId] };
   next[siteId][empId] = { ...next[siteId][empId] };
   if (nextVal === undefined) {
@@ -66,11 +92,6 @@ export function applyClick({ schedule, siteId, empId, day, leaveTypes, emp, dire
   } else {
     next[siteId][empId][day] = nextVal;
   }
-
-  // 跨據點 dash 聯動
-  const otherSiteIds = (emp.arranged ?? [])
-    .map(a => a.siteId)
-    .filter(id => id !== siteId);
 
   for (const otherId of otherSiteIds) {
     next[otherId] = { ...next[otherId] };
@@ -81,8 +102,80 @@ export function applyClick({ schedule, siteId, empId, day, leaveTypes, emp, dire
     } else if (nextVal === undefined) {
       delete next[otherId][empId][day];
     } else {
-      // 假別：其他據點也同步
       next[otherId][empId][day] = nextVal;
+    }
+  }
+
+  return next;
+}
+
+/**
+ * 大班表點擊：循環「預排據點代表字 → 假別 → undefined」
+ *
+ * 序列：undefined → site[0].repChar(work) → site[1].repChar(work) → ...
+ *       → leave[0] → ... → leave[n-1] → undefined
+ *
+ * 循環到某據點代表字時，該據點設為 'work'，其餘預排據點設為 'dash'。
+ * 循環到假別時，所有預排據點該天都設為該假別。
+ * 循環到 undefined 時，所有預排據點該天清空。
+ *
+ * @param {object} params
+ * @param {object}   params.schedule
+ * @param {string}   params.empId
+ * @param {number}   params.day
+ * @param {string[]} params.leaveTypes
+ * @param {Employee} params.emp        - 含 arrSites
+ * @param {Site[]}   params.sites      - 含 name[2] 代表字
+ * @param {'forward'|'backward'} [params.direction='forward']
+ * @returns {object}
+ */
+export function applyBigClick({ schedule, empId, day, leaveTypes, emp, sites, direction = 'forward' }) {
+  const next = { ...schedule };
+  const arrSiteIds = [...new Set((emp.arrSites ?? []).map(a => a.siteId))];
+
+  if (arrSiteIds.length === 0) return next;
+
+  // 找目前狀態：哪個據點是 work？還是假別？還是空白？
+  let cur; // undefined | siteId | leaveType
+  const workSiteId = arrSiteIds.find(sid => next[sid]?.[empId]?.[day] === 'work');
+  if (workSiteId !== undefined) {
+    cur = workSiteId;
+  } else {
+    // 檢查是否為假別（任一預排據點有相同假別值）
+    for (const sid of arrSiteIds) {
+      const v = next[sid]?.[empId]?.[day];
+      if (v && v !== 'dash') { cur = v; break; }
+    }
+  }
+
+  // 建立完整循環序列：[siteId, siteId, ..., leave0, leave1, ..., undefined]
+  const sequence = [...arrSiteIds, ...leaveTypes, undefined];
+
+  let curIdx;
+  if (cur === undefined) {
+    curIdx = sequence.length - 1; // undefined 在序列最後
+  } else {
+    curIdx = sequence.indexOf(cur);
+    if (curIdx === -1) curIdx = sequence.length - 1;
+  }
+
+  const delta  = direction === 'backward' ? -1 : 1;
+  const nextIdx = (curIdx + delta + sequence.length) % sequence.length;
+  const nextVal = sequence[nextIdx];
+
+  // 套用到所有預排據點
+  for (const sid of arrSiteIds) {
+    next[sid] = { ...next[sid] };
+    next[sid][empId] = { ...next[sid][empId] };
+
+    if (nextVal === undefined) {
+      delete next[sid][empId][day];
+    } else if (arrSiteIds.includes(nextVal)) {
+      // nextVal 是一個 siteId → 該據點 work，其他 dash
+      next[sid][empId][day] = (sid === nextVal) ? 'work' : 'dash';
+    } else {
+      // nextVal 是假別 → 全部同步
+      next[sid][empId][day] = nextVal;
     }
   }
 

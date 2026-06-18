@@ -1,12 +1,11 @@
 // ════════════════════════════════════════════
 // core/services/exportEngine.js
 // ExcelJS 報表輸出——不碰 DOM
-// ExcelJS 透過全域 window.ExcelJS 存取
 // ════════════════════════════════════════════
 
-import { rocMonthLabel } from '../../shared/utils/date.js';
+import { rocMonthLabel }       from '../../shared/utils/date.js';
+import { DEFAULT_ONDUTY_KEY }  from '../../shared/constants.js';
 
-// ── 樣式常數 ──────────────────────────────────
 const FONT         = '微軟正黑體';
 const YELLOW_FILL  = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF9C4' } };
 const RED_FILL     = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFE0E0' } };
@@ -25,37 +24,24 @@ const THIN_BORDER  = {
   right:  { style: 'thin', color: { argb: 'FF2E2E50' } },
 };
 
-// ── 特殊日 Map 輔助 ───────────────────────────
-function _buildDistrictDayMap(sites, month) {
+function _buildDayMap(arr, dateField, month) {
   const map = {};
-  for (const site of sites) {
-    if (!site.districtDate) continue;
-    if (site.districtDate.slice(0, 7) !== month) continue;
-    map[site.id] = parseInt(site.districtDate.slice(8));
+  for (const item of arr) {
+    if (!item[dateField]) continue;
+    if (item[dateField].slice(0, 7) !== month) continue;
+    map[item.id] = parseInt(item[dateField].slice(8));
   }
   return map;
 }
 
-function _buildResignDayMap(employees, month) {
-  const map = {};
-  for (const emp of employees) {
-    if (!emp.resignDate) continue;
-    if (emp.resignDate.slice(0, 7) !== month) continue;
-    map[emp.id] = parseInt(emp.resignDate.slice(8));
-  }
-  return map;
-}
-
-// ── 內部輔助 ──────────────────────────────────
 function _getCellFill(isHol, isDistDay) {
   if (isDistDay) return RED_FILL;
   if (isHol)     return YELLOW_FILL;
   return NO_FILL;
 }
 
-function applyCell(cell, value, isHol, isDistDay) {
-  const display = (value === 'work' || value === 'dash')
-    ? '' : (value ?? '');
+function applyCell(cell, value, isHol, isDistDay, onDutyKey) {
+  const display = (value === 'work' || value === 'dash') ? '' : (value ?? '');
   const isLeave = display !== '';
   cell.value     = display;
   cell.font      = isLeave ? LEAVE_FONT : NORMAL_FONT;
@@ -72,7 +58,7 @@ function applyBlockedCell(cell) {
   cell.alignment = { horizontal: 'center', vertical: 'middle' };
 }
 
-function buildDateHeaderRow(ws, month, days, holDays, districtDay, labelColWidth) {
+function buildDateHeaderRow(ws, days, holDays, districtDay, labelColWidth) {
   const corner = ws.getCell(1, 1);
   corner.font      = HEADER_FONT;
   corner.fill      = HEADER_FILL;
@@ -107,27 +93,36 @@ async function downloadWorkbook(wb, filename) {
 
 // ── 社區班表 ──────────────────────────────────
 export async function exportCommunityXlsx(settings, schedule, allSites, allEmps, holDays) {
-  const month          = settings.month ?? '';
-  const [y, m]         = month.split('-');
-  const days           = new Date(+y, +m, 0).getDate();
-  const wb             = new ExcelJS.Workbook();
-  wb.creator           = settings.orgName ?? '排班小幫手';
-  const districtDayMap = _buildDistrictDayMap(allSites, month);
-  const resignDayMap   = _buildResignDayMap(allEmps, month);
+  const month      = settings.month ?? '';
+  const [y, m]     = month.split('-');
+  const days       = new Date(+y, +m, 0).getDate();
+  const onDutyKey  = settings.onDutyKey ?? DEFAULT_ONDUTY_KEY;
+  const wb         = new ExcelJS.Workbook();
+  wb.creator       = settings.orgName ?? '排班小幫手';
+  const distDayMap = _buildDayMap(allSites, 'HOADate',  month);
+  const resignDayMap = _buildDayMap(allEmps, 'lastDate', month);
 
   for (const site of allSites) {
-    const districtDay = districtDayMap[site.id] ?? null;
-    const ws          = wb.addWorksheet((site.shortName || site.name).slice(0, 31));
-    buildDateHeaderRow(ws, month, days, holDays, districtDay, 12);
-    ws.getCell(1, 1).value = `${site.shortName || site.name}  ${rocMonthLabel(month)}`;
+    const distDay = distDayMap[site.id] ?? null;
+    const ws      = wb.addWorksheet((site.name[1] || site.name[0]).slice(0, 31));
+    buildDateHeaderRow(ws, days, holDays, distDay, 12);
+    ws.getCell(1, 1).value = `${site.name[1] || site.name[0]}  ${rocMonthLabel(month)}`;
+
+    // 每個 (emp, shift, duty) 組合一行
+    const rows = [];
+    for (const emp of allEmps) {
+      for (const a of (emp.arrSites ?? [])) {
+        if (a.siteId === site.id) rows.push({ emp, shift: a.shift, duty: a.duty });
+      }
+    }
 
     const siteData = schedule[site.id] ?? {};
     let row = 2;
-    for (const emp of allEmps) {
+    for (const { emp, shift, duty } of rows) {
       const resignDay = resignDayMap[emp.id] ?? null;
       const dayMap    = siteData[emp.id] ?? {};
       const nameCell  = ws.getCell(row, 1);
-      nameCell.value     = emp.name;
+      nameCell.value     = `${emp.name} ${shift} ${duty}`;
       nameCell.font      = LABEL_FONT;
       nameCell.border    = THIN_BORDER;
       nameCell.alignment = { horizontal: 'left', vertical: 'middle' };
@@ -136,7 +131,7 @@ export async function exportCommunityXlsx(settings, schedule, allSites, allEmps,
         if (resignDay !== null && d > resignDay) {
           applyBlockedCell(cell);
         } else {
-          applyCell(cell, d in dayMap ? dayMap[d] : '', holDays.has(d), districtDay === d);
+          applyCell(cell, d in dayMap ? dayMap[d] : '', holDays.has(d), distDay === d, onDutyKey);
         }
       }
       ws.getRow(row).height = 20;
@@ -146,28 +141,31 @@ export async function exportCommunityXlsx(settings, schedule, allSites, allEmps,
   await downloadWorkbook(wb, `社區班表_${month}.xlsx`);
 }
 
-// ── 人員班表（全員）──────────────────────────
+// ── 人員班表 ──────────────────────────────────
 export async function exportEmployeeXlsx(settings, schedule, allSites, allEmps, holDays) {
-  const month          = settings.month ?? '';
-  const [y, m]         = month.split('-');
-  const days           = new Date(+y, +m, 0).getDate();
-  const wb             = new ExcelJS.Workbook();
-  wb.creator           = settings.orgName ?? '排班小幫手';
-  const districtDayMap = _buildDistrictDayMap(allSites, month);
-  const resignDayMap   = _buildResignDayMap(allEmps, month);
+  const month      = settings.month ?? '';
+  const [y, m]     = month.split('-');
+  const days       = new Date(+y, +m, 0).getDate();
+  const onDutyKey  = settings.onDutyKey ?? DEFAULT_ONDUTY_KEY;
+  const wb         = new ExcelJS.Workbook();
+  wb.creator       = settings.orgName ?? '排班小幫手';
+  const distDayMap = _buildDayMap(allSites, 'HOADate',  month);
+  const resignDayMap = _buildDayMap(allEmps, 'lastDate', month);
 
   for (const emp of allEmps) {
     const resignDay = resignDayMap[emp.id] ?? null;
     const ws        = wb.addWorksheet(emp.name.slice(0, 31));
-    buildDateHeaderRow(ws, month, days, holDays, null, 12);
+    buildDateHeaderRow(ws, days, holDays, null, 12);
     ws.getCell(1, 1).value = `${emp.name}  ${rocMonthLabel(month)}`;
 
     let row = 2;
-    for (const site of allSites) {
-      const districtDay = districtDayMap[site.id] ?? null;
-      const dayMap      = schedule[site.id]?.[emp.id] ?? {};
-      const nameCell    = ws.getCell(row, 1);
-      nameCell.value     = site.shortName || site.name;
+    for (const { siteId, shift, duty } of (emp.arrSites ?? [])) {
+      const site     = allSites.find(s => s.id === siteId);
+      if (!site) continue;
+      const distDay  = distDayMap[siteId] ?? null;
+      const dayMap   = schedule[siteId]?.[emp.id] ?? {};
+      const nameCell = ws.getCell(row, 1);
+      nameCell.value     = `${site.name[1] || site.name[0]} ${shift} ${duty}`;
       nameCell.font      = LABEL_FONT;
       nameCell.border    = THIN_BORDER;
       nameCell.alignment = { horizontal: 'left', vertical: 'middle' };
@@ -176,7 +174,7 @@ export async function exportEmployeeXlsx(settings, schedule, allSites, allEmps, 
         if (resignDay !== null && d > resignDay) {
           applyBlockedCell(cell);
         } else {
-          applyCell(cell, d in dayMap ? dayMap[d] : '', holDays.has(d), districtDay === d);
+          applyCell(cell, d in dayMap ? dayMap[d] : '', holDays.has(d), distDay === d, onDutyKey);
         }
       }
       ws.getRow(row).height = 20;
@@ -188,13 +186,14 @@ export async function exportEmployeeXlsx(settings, schedule, allSites, allEmps, 
 
 // ── 大班表 ────────────────────────────────────
 export async function exportBigXlsx(settings, schedule, allSites, allEmps, holDays) {
-  const month        = settings.month ?? '';
-  const [y, m]       = month.split('-');
-  const days         = new Date(+y, +m, 0).getDate();
-  const wb           = new ExcelJS.Workbook();
-  const ws           = wb.addWorksheet('大班表');
-  const resignDayMap = _buildResignDayMap(allEmps, month);
-  buildDateHeaderRow(ws, month, days, holDays, null, 12);
+  const month      = settings.month ?? '';
+  const [y, m]     = month.split('-');
+  const days       = new Date(+y, +m, 0).getDate();
+  const onDutyKey  = settings.onDutyKey ?? DEFAULT_ONDUTY_KEY;
+  const wb         = new ExcelJS.Workbook();
+  const ws         = wb.addWorksheet('大班表');
+  const resignDayMap = _buildDayMap(allEmps, 'lastDate', month);
+  buildDateHeaderRow(ws, days, holDays, null, 12);
   ws.getCell(1, 1).value = `${settings.orgName ?? ''}  ${rocMonthLabel(month)}`;
 
   let row = 2;
@@ -219,7 +218,10 @@ export async function exportBigXlsx(settings, schedule, allSites, allEmps, holDa
         if (!dayMap || !(d in dayMap)) continue;
         const val = dayMap[d];
         if (val === 'dash') continue;
-        if (val === 'work') { cellVal = site.name[2] || site.name[1]?.[0] || site.name[0]?.[0]; break; }
+        if (val === 'work') {
+          cellVal = site.name[2] || site.name[1]?.[0] || site.name[0]?.[0] || '?';
+          break;
+        }
         cellVal = val; isLeave = true; break;
       }
       cell.value     = cellVal;

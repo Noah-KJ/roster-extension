@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>排班小幫手</title>
+  <title>排班引擎</title>
   <link rel="stylesheet" href="app.css">
 </head>
 <body>
@@ -15,7 +15,7 @@
   ════════════════════════════════════════ -->
   <div id="app">
     <nav id="sidebar">
-      <div class="sidebar-logo">排班小幫手</div>
+      <div class="sidebar-logo">排班處理器</div>
       <ul class="sidebar-nav">
         <li>
           <button class="nav-btn" data-page="settings">
@@ -57,7 +57,7 @@
       <main>
 
         <div class="toolbar">
-          <span class="toolbar-label2">願這支小程式 能幫助您 更貼近辛苦的人們</span>
+          <span class="toolbar-label2" id="donate">願這支小程式 能幫助您 更貼近辛苦的人們</span>
         </div>
 
         <!-- 基本設定 -->
@@ -77,6 +77,21 @@
                 <input type="month" id="schedule-month">
               </div>
               <button class="btn btn-primary" id="btn-save-basic">儲存</button>
+            </div>
+            <div class="field-row">
+              <div class="field">
+                <label>值班符</label>
+                <input class="narrowInput" type="text" id="on-duty-key" placeholder="✔" maxlength="2">
+              </div>
+              <div class="field">
+                <label>佔位符(已有班)</label>
+                <input class="narrowInput" type="text" id="non-empty-key" placeholder="-" maxlength="1">
+              </div>
+              <div class="field">
+                <label>空班符</label>
+                <input class="narrowInput" type="text" id="empty-key" placeholder="　" maxlength="1">
+              </div>
+              <button class="btn btn-primary" id="btn-save-key">儲存</button>
             </div>
           </div>
         </div>
@@ -118,27 +133,6 @@
               </div>
               <div class="calendar-grid" id="cal-grid"></div>
             </div>
-          </div>
-        </div>
-        <!-- 排班符號設定 -->
-        <div class="card">
-          <div class="card-header">
-            <h2>排班符號設定</h2>
-            <span class="save-hint" id="key-hint">已儲存 ✓</span>
-          </div>
-          <div class="card-body">
-              <div class="field-row">
-                <div class="field">
-                  <label>值班符</label>
-                  <input type="text" id="on-duty-key" placeholder="✔" maxlength="2">
-                </div>
-                <div class="field">
-                  <label>佔位符</label>
-                  <input type="text" id="non-empty-key" placeholder="-" maxlength="1">
-                </div>
-                <button class="btn btn-primary" id="btn-save-key">儲存</button>
-              </div>
-              
           </div>
         </div>
 
@@ -244,8 +238,8 @@
             <div class="card-header">
               <h2>編現比總覽</h2>
             </div>
-            <div class="card-body">
-              <p class="empty-state">施工中 🚧</p>
+            <div class="card-body" id="ratio-panel">
+              <!-- 由 ratioPanel.js 渲染 -->
             </div>
           </div>
 
@@ -296,14 +290,14 @@
             <input type="text" id="emp-search" placeholder="搜尋人員…">
             <select id="emp-shift-filter">
               <option value="">全班段</option>
-              <option value="day">日班</option>
-              <option value="night">夜班</option>
-              <option value="both">日/夜</option>
+              <option value="日班">日班</option>
+              <option value="夜班">夜班</option>
+              <option value="日/夜">日/夜</option>
             </select>
             <select id="emp-mobility-filter">
               <option value="">全班別</option>
-              <option value="regular">正班</option>
-              <option value="flex">機動</option>
+              <option value="正班">正班</option>
+              <option value="機動">機動</option>
             </select>
             <button class="btn btn-primary" id="btn-add-emp">＋ 新增人員</button>
             <span class="count-badge" id="emp-count"></span>
@@ -340,7 +334,7 @@
               <thead>
                 <tr>
                   <th>據點</th><th>轄區</th><th>駐地</th><th>電話</th>
-                  <th>日班</th><th>夜班</th><th>缺額</th><th>備註</th>
+                  <th>配置勤務</th><th>缺額</th><th>備註</th>
                 </tr>
               </thead>
               <tbody id="sites-tbody"></tbody>
@@ -360,38 +354,33 @@
           <button class="modal-close" data-close="site-modal">✕</button>
         </div>
         <div class="modal-body">
-          <div class="field-group cols-3">
+          <div class="field-group cols-4">
             <div class="field"><label>名稱 *</label><input type="text" id="s-name" placeholder="OO社區"></div>
             <div class="field"><label>簡稱 *</label><input type="text" maxlength="4" id="s-shortName"></div>
-            <div class="field"><label>社區電話 *</label><input type="text" id="s-phone"></div>
-          </div>
-          <div class="field-group cols-3">
             <div class="field"><label>轄區</label><select id="s-region"></select></div>
             <div class="field"><label>駐地</label><select id="s-located"></select></div>
-            <div class="field"><label>Email</label><input type="text" id="s-email"></div>
           </div>
           <div class="field-group cols-3">
-            <div class="field"><label>地址 *</label><select id="s-city"></select></div>
-            <div class="field"><select id="s-dist"></select></div>
-            <div class="field"><input type="text" id="s-address"></div>
+            <div class="field"><label>社區電話 *</label><input type="text" id="s-tel"></div>
+            <div class="field"><label>合約日</label><input type="date" id="s-CEDate"></div>
+            <div class="field"><label>區大日</label><input type="date" id="s-HOADate"></div>
+            
+          </div>
+          <div class="field-group cols-addr">
+            <div class="field"><label>縣市</label><select id="s-city"></select></div>
+            <div class="field"><label>鄉鎮市區</label><select id="s-dist"></select></div>
+            <div class="field"><label>詳細地址 *</label><input type="text" id="s-addr"></div>
           </div>
           <div class="field-group cols-1">
             <div class="field"><label>備註</label><input type="text" id="s-note"></div>
           </div>
-
-          <div class="field-group cols-2">
-            <div class="field"><label>合約日</label><input type="date" id="s-contractDate"></div>
-            <div class="field"><label>區大日</label><input type="date" id="s-districtDate"></div>
-          </div>
-          <div class="section-label">聯絡人員</div>
-          <div class="sub-list" id="contacts-list"></div>
-          <button class="sub-add" id="contacts-add">＋ 新增聯絡人</button>
-          <div class="section-label">日班配置（最多 8 項）</div>
-          <div class="shifts-grid" id="shifts-day"></div>
-          <button class="shift-add" id="shift-day-add">＋ 新增日班項目</button>
-          <div class="section-label">夜班配置（最多 8 項）</div>
-          <div class="shifts-grid" id="shifts-night"></div>
-          <button class="shift-add" id="shift-night-add">＋ 新增夜班項目</button>
+            
+          <div class="section-label">勤務配置（最多 15 項）</div>
+          <div class="duties-grid" id="duties-grid"></div>
+          <button class="duty-add" id="duties-add">＋ 新增勤務</button>
+          <div class="section-label">黑名單</div>
+          <div class="duties-grid" id="blocks-grid"></div>
+          <button class="duty-add" id="blocks-add">＋ 新增黑名單</button>
         </div>
         <div class="modal-footer">
           <button class="btn btn-ghost" data-close="site-modal">取消</button>
@@ -410,34 +399,27 @@
         <div class="modal-body">
           <div class="field-group cols-3">
             <div class="field"><label>姓名 *</label><input type="text" id="e-name"></div>
-            <div class="field"><label>電話</label><input type="text" id="e-phone"></div>
-            <div class="field"><label>離職日</label><input type="date" id="e-resignDate"></div>
-          </div>
-          <div class="field-group cols-3">
-            <div class="field">
-              <label>班段 *</label>
-              <select id="e-shift"></select>
-            </div>
-            <div class="field">
-              <label>班別 *</label>
-              <select id="e-mobility"></select>
-            </div>
+            <div class="field"><label>電話 *</label><input type="text" id="e-tel"></div>
             <div class="field"><label>接受天數</label><input type="number" min="1" max="31" id="e-days"></div>
           </div>
-          <div class="field-group cols-1">
-            <div class="field"><label>地址</label><input type="text" id="e-address"></div>
+          <div class="field-group cols-3">
+            <div class="field"><label>班段</label><select id="e-shift"></select></div>
+            <div class="field"><label>班別</label><select id="e-mobility"></select></div>
+            <div class="field"><label>離職日</label><input type="date" id="e-lastDate"></div>
+          </div>
+          <div class="field-group cols-addr">
+            <div class="field"><label>縣市</label><select id="e-city"></select></div>
+            <div class="field"><label>鄉鎮市區</label><select id="e-dist"></select></div>
+            <div class="field"><label>詳細地址 *</label><input type="text" id="e-addr"></div>
           </div>
           <div class="field-group cols-1">
             <div class="field"><label>備註</label><input type="text" id="e-note"></div>
           </div>
           <div class="section-label">掌握勤務</div>
           <div class="duties-grid" id="e-duties"></div>
-          <div class="section-label">禁排據點</div>
-          <div class="sub-list" id="forbidden-list"></div>
-          <button class="sub-add" id="btn-add-forbidden">＋ 新增禁排</button>
           <div class="section-label">預排據點</div>
-          <div class="sub-list" id="arranged-list"></div>
-          <button class="sub-add" id="btn-add-arranged">＋ 新增預排</button>
+          <div class="sub-list" id="arrSites-list"></div>
+          <button class="sub-add" id="btn-add-arrSites">＋ 新增預排</button> 
         </div>
         <div class="modal-footer">
           <button class="btn btn-ghost" data-close="emp-modal">取消</button>
@@ -489,12 +471,11 @@
 
       <main>
 
-        <!-- 總覽（大班表，唯讀）-->
+        <!-- 總覽（大班表）-->
         <section id="tab-overview" class="tab-content active">
           <div class="toolbar">
             <span class="toolbar-label">排班月份</span>
             <span id="month-label" class="toolbar-month">—</span>
-            <span class="toolbar-label2">大班表只負責呈現，屏蔽點擊排班喔</span>
           </div>
           <div class="table-wrap" id="big-wrap">
             <p class="empty-state">請先在設定頁選擇排班月份</p>

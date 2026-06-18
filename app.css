@@ -1,5 +1,5 @@
 /* ════════════════════════════════════════════════════════
-   app.css — 排班小幫手 SPA 合併樣式
+   app.css — 排班處理器 SPA 
    結構：
      1. Reset & Design Tokens
      2. SPA 骨架（sidebar + page-root）
@@ -24,18 +24,20 @@
 
 :root {
   /* Colors */
-  --bg:        #0f0f1a;
-  --bg2:       #181828;
-  --bg3:       #20203a;
-  --border:    #2e2e50;
-  --accent:    #6c8eff;
-  --accent2:   #a78bfa;
-  --text:      #dde1ff;
-  --text2:     #888aaa;
-  --danger:    #ff6b6b;
-  --success:   #4ecdc4;
-  --warn:      #f59e0b;
-  --warn-dim:  rgba(245, 158, 11, 0.12);
+  --bg:        #2b2420;      /* 深棕褐色背景 */
+  --bg2:       #3a322e;      /* 中棕褐色 */
+  --bg3:       #4a403a;      /* 淺棕褐色 */
+  --border:    #5c4a3d;      /* 咖啡色邊框 */
+  --accent:    #c9a87c;      /* 卡布奇諾金/駝色主色 */
+  --accent2:   #b8956a;      /* 較深的棕褐色 */
+  --text:      #e8dccb;      /* 米白色文字 */
+  --text2:     #a89f91;      /* 灰褐色次要文字 */
+  --danger:    #ff6b6b;      /* 保留 - 危險色 */
+  --success:   #4ecdc4;      /* 保留 - 成功色 */
+  --warn:      #f59e0b;      /* 保留 - 警告色 */
+  --warn-dim:  rgba(245, 158, 11, 0.12);  /* 保留 */
+
+
 
   /* Schedule-specific */
   --holiday-bg:  rgba(255, 240, 180, 0.07);
@@ -304,6 +306,18 @@ main { flex: 1;  overflow: visible; display: flex; flex-direction: column; }
   font-weight: 600;
   letter-spacing: 0.05em;
 }
+.narrowInput {
+  max-width: 140px;
+  padding: 7px 10px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text);
+  font-size: var(--fs-sm);
+  font-family: var(--font);
+  outline: none;
+  transition: border-color 0.15s;
+}
 .field input,
 .field select,
 .field textarea {
@@ -311,7 +325,7 @@ main { flex: 1;  overflow: visible; display: flex; flex-direction: column; }
   padding: 7px 10px;
   background: var(--bg3);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 12px;
   color: var(--text);
   font-size: var(--fs-sm);
   font-family: var(--font);
@@ -324,14 +338,18 @@ main { flex: 1;  overflow: visible; display: flex; flex-direction: column; }
 .field textarea { resize: vertical; min-height: 60px; }
 
 .field-group              { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.field-group.cols-3       { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .field-group.cols-1       { grid-template-columns: minmax(0, 1fr); }
 .field-group.cols-2       { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-
+.field-group.cols-3       { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.field-group.cols-4       { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.field-group.cols-addr    { 
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 3fr); 
+}
 .field-row {
   display: flex;
   align-items: center;
   gap: 12px;
+  padding: 6px 0;
   flex-wrap: wrap;
 }
 
@@ -563,18 +581,17 @@ main { flex: 1;  overflow: visible; display: flex; flex-direction: column; }
 }
 .map-info-item p { font-size: 1rem; color: var(--text); }
 
-/* ── Shifts editor ── */
-.shifts-grid { display: flex; flex-direction: column; gap: 6px; }
-.shift-row {
+/* ── Duties editor ── */
+.duties-grid { display: flex; flex-direction: row; gap: 6px; }
+.sub-row{
   display: grid;
   grid-template-columns: 60px 1fr 80px 32px;
   gap: 8px;
   align-items: center;
 }
-.shift-label { font-size: var(--fs-3xs); color: var(--text2); font-weight: 600; }
+.sub-label { font-size: var(--fs-3xs); color: var(--text2); font-weight: 600; }
 
-.shift-add,
-.sub-add {
+.duty-add,.sub-add {
   background: transparent;
   border: 1px dashed var(--border);
   border-radius: 6px;
@@ -586,7 +603,7 @@ main { flex: 1;  overflow: visible; display: flex; flex-direction: column; }
   margin-top: 4px;
   width: 100%;
 }
-.shift-add:hover { border-color: var(--accent);  color: var(--accent); }
+.duty-add:hover { border-color: var(--accent);  color: var(--accent); }
 .sub-add:hover   { border-color: var(--accent2); color: var(--accent2); }
 
 /* ── Duties checkboxes ── */
@@ -618,7 +635,6 @@ main { flex: 1;  overflow: visible; display: flex; flex-direction: column; }
   gap: 8px;
   align-items: center;
 }
-.contact-row  { grid-template-columns: 1fr 1fr 1fr 1fr 28px; }
 .arranged-row { grid-template-columns: 1fr 1fr 130px 1fr 28px; align-items: start; }
 
 
@@ -791,21 +807,33 @@ main { flex: 1;  overflow: visible; display: flex; flex-direction: column; }
 
 /* 👇 預設狀態：內文直接隱藏 */
 .card-body { 
-  display: none; 
-  padding: 20px; 
+  max-height: 0;        /* 💡 預設高度歸零 */
+  opacity: 0;           /* 💡 預設透明度歸零 */
+  padding: 0 20px;      /* ⚠️ 核心：上下 padding 必須是 0，左右維持 20px 畫面才不會抖動 */
+  overflow: hidden;     /* 💡 裁剪內容 */
+  
+  /* 讓高度、內距、透明度同時進行平滑動畫 */
+  transition: 
+    max-height 0.5s ease, 
+    padding-top 0.5s ease, 
+    padding-bottom 0.5s ease, 
+    opacity 0.4s ease;
 }
-.card-body--flush { padding: 0; }
 
 /*展開狀態 (Active / Expanded State) */
 .card.is-open .card-header {
   border-bottom: 1px solid var(--border);
 }
 .card.is-open .card-body {
-  display: block; /* 展開內容 */
+  max-height: 800px;    /* 💡 給一個預估最大高度（只要比實際內容高就行） */
+  opacity: 1;
+  padding-top: 20px;    /* 💡 展開時還原上方 padding */
+  padding-bottom: 20px; /* 💡 展開時還原下方 padding */
 }
 .card.is-open .card-header h2::before {
   transform: rotate(0deg); /* 箭頭轉正向下 */
 }
+
 /* ── Calendar ── */
 .calendar-wrap { display: flex; flex-direction: column; gap: 12px; }
 

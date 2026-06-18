@@ -3,13 +3,15 @@
 // 據點列表 + Modal CRUD
 // ════════════════════════════════════════════
 
-import { getSitesState, setSitesState }         from '../../../core/store/globalState.js';
-import { getSettingsState }                     from '../../../core/store/globalState.js';
-import { SITE_TEMPLATE }                        from '../../../shared/constants.js';
-import { showConfirm, showToastMsg }            from '../../../shared/utils/notify.js';
-import { ValidationError }                      from './validation.js';
-import { 
-        openModal, closeModal, bindModalClose, bindEl, fillSelect
+import { getSitesState, setSitesState,
+         getSettingsState }              from '../../../core/store/globalState.js';
+import { SITE_TEMPLATE }                 from '../../../shared/constants.js';
+import { showConfirm, showToastMsg }     from '../../../shared/utils/notify.js';
+import { assignRepChar }                 from '../../../core/services/siteService.js';
+import { ValidationError }               from './validation.js';
+import {
+  openModal, closeModal, bindModalClose,
+  bindEl, fillSelect, fillRegionSelects,
 } from '../../../shared/utils/dom.js';
 
 let _editingSiteId = null;
@@ -18,15 +20,13 @@ const _cleanups = [];
 // ── 初始化 ────────────────────────────────────
 export function mount() {
   bindEl('btn-add-site',        'click',  () => openSiteModal(null), _cleanups);
-  bindEl('btn-save-site',       'click',  saveSite, _cleanups);
-  bindEl('site-region-filter',    'change', renderSites, _cleanups);
+  bindEl('btn-save-site',       'click',  saveSite,    _cleanups);
+  bindEl('site-region-filter',  'change', renderSites, _cleanups);
   bindEl('site-located-filter', 'change', renderSites, _cleanups);
   bindEl('site-search',         'input',  renderSites, _cleanups);
-  bindEl('shift-day-add',       'click',  () => addShiftRow('day'), _cleanups);
-  bindEl('shift-night-add',     'click',  () => addShiftRow('night'), _cleanups);
-  bindEl('contacts-add', 'click', () => {
-    document.getElementById('contacts-list').appendChild(makeContactRow());
-  }, _cleanups);
+  bindEl('duties-day-add',      'click',  () => _addDutyRow('日班'), _cleanups);
+  bindEl('duties-night-add',    'click',  () => _addDutyRow('夜班'), _cleanups);
+
 
   fillSelect('site-region-filter',  getSettingsState().regions, '', '全部轄區');
   fillSelect('site-located-filter', getSettingsState().located, '', '全部地點');
@@ -48,39 +48,35 @@ export function renderSites() {
   const q = document.getElementById('site-search')?.value.trim().toLowerCase() ?? '';
 
   let filtered = sites;
-  const regionFilter    = document.getElementById('site-region-filter')?.value ?? '';
+  const regionFilter  = document.getElementById('site-region-filter')?.value ?? '';
   const locatedFilter = document.getElementById('site-located-filter')?.value ?? '';
 
-  if (regionFilter) filtered = filtered.filter(s => s.region === regionFilter);
+  if (regionFilter)  filtered = filtered.filter(s => s.region === regionFilter);
   if (locatedFilter) filtered = filtered.filter(s => s.located === locatedFilter);
-  if (q)           filtered = filtered.filter(s => s.name.includes(q) || 
-                                                   s.shortName?.includes(q) || 
-                                                   s.address?.includes(q));
+  if (q) filtered = filtered.filter(s =>
+    (s.name[0] ?? '').includes(q) ||
+    (s.name[1] ?? '').includes(q) ||
+    (s.addr[2] ?? '').includes(q)
+  );
 
   document.getElementById('site-count').textContent = `共 ${filtered.length} 筆`;
   const tbody = document.getElementById('sites-tbody');
   const empty = document.getElementById('sites-empty');
 
   if (filtered.length === 0) {
-    tbody.innerHTML = '';
-    empty.style.display = '';
-    return;
+    tbody.innerHTML = ''; empty.style.display = ''; return;
   }
   empty.style.display = 'none';
   tbody.innerHTML = '';
 
   for (const site of filtered) {
-    const dayTotal   = (site.shifts?.day   ?? []).reduce((s, r) => s + (r.count || 0), 0);
-    const nightTotal = (site.shifts?.night ?? []).reduce((s, r) => s + (r.count || 0), 0);
+    const dayTotal   = (site.duties ?? []).filter(d => d.shift === '日班').reduce((s, r) => s + (r.count || 0), 0);
+    const nightTotal = (site.duties ?? []).filter(d => d.shift === '夜班').reduce((s, r) => s + (r.count || 0), 0);
 
-    // 缺額摘要
     const vacancies = [];
-    for (const period of ['day', 'night']) {
-      const label = period === 'day' ? '日' : '夜';
-      for (const shift of (site.shifts[period] ?? [])) {
-        const remaining = shift.last ?? shift.count;
-        if (remaining > 0) vacancies.push(`${label}${shift.duty}×${remaining}`);
-      }
+    for (const d of (site.duties ?? [])) {
+      const remaining = d.last ?? d.count;
+      if (remaining > 0) vacancies.push(`${d.shift === '日班' ? '日' : '夜'}${d.duty}×${remaining}`);
     }
     const vacancyHtml = vacancies.length
       ? vacancies.map(v => `<span class="vacancy-badge">${v}</span>`).join(' ')
@@ -88,10 +84,10 @@ export function renderSites() {
 
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td>${site.shortName ?? ''}</td>
-      <td>${site.region ?? ''}</td>
+      <td>${site.name[1] ?? ''}</td>
+      <td>${site.region  ?? ''}</td>
       <td>${site.located ?? ''}</td>
-      <td>${site.phone ?? ''}</td>
+      <td>${site.tel     ?? ''}</td>
       <td>${dayTotal   || '—'}</td>
       <td>${nightTotal || '—'}</td>
       <td>${vacancyHtml}</td>
@@ -107,7 +103,7 @@ export function renderSites() {
     });
     tr.querySelector('[title="刪除"]').addEventListener('click', e => {
       e.stopPropagation();
-      showConfirm(`確定要刪除「${site.name}」嗎？`).then(ok => {
+      showConfirm(`確定要刪除「${site.name[0]}」嗎？`).then(ok => {
         if (!ok) return;
         setSitesState(getSitesState().filter(s => s.id !== site.id));
         renderSites();
@@ -121,70 +117,72 @@ export function renderSites() {
 // ── Modal ─────────────────────────────────────
 function openSiteModal(id) {
   _editingSiteId = id;
-  const sites = getSitesState();
-  const site  = id ? sites.find(s => s.id === id) : SITE_TEMPLATE();
+  const sites  = getSitesState();
+  const site   = id ? sites.find(s => s.id === id) : SITE_TEMPLATE();
   const duties = getSettingsState().duties ?? [];
-  const region = getSettingsState().regions ?? [];
-  const located = getSettingsState().located ?? [];
 
   document.getElementById('site-modal-title').textContent = id ? '編輯據點' : '新增據點';
-  document.getElementById('s-name').value         = site.name         ?? '';
-  document.getElementById('s-shortName').value    = site.shortName    ?? '';
-  document.getElementById('s-phone').value        = site.phone        ?? '';
+  document.getElementById('s-name').value      = site.name[0] ?? '';
+  document.getElementById('s-shortName').value = site.name[1] ?? '';
+  document.getElementById('s-tel').value       = site.tel     ?? '';
+  document.getElementById('s-note').value      = site.note    ?? '';
+  document.getElementById('s-CEDate').value    = site.CEDate  ?? '';
+  document.getElementById('s-HOADate').value   = site.HOADate ?? '';
 
-  document.getElementById('s-region').value         = site.region         ?? '';
-  document.getElementById('s-located').value      = site.located      ?? '';
-  document.getElementById('s-email').value        = site.email        ?? '';
+  fillRegionSelects('s-city', 's-dist', _cleanups, site.addr[0], site.addr[1]);
+  document.getElementById('s-addr').value = site.addr[2] ?? '';
 
-  document.getElementById('s-address').value      = site.address      ?? '';
-  document.getElementById('s-note').value         = site.note         ?? '';
-  document.getElementById('s-contractDate').value = site.contractDate ?? '';
-  document.getElementById('s-districtDate').value = site.districtDate ?? '';
+  fillSelect('s-region',  getSettingsState().regions, site.region  ?? '');
+  fillSelect('s-located', getSettingsState().located, site.located ?? '');
 
-  fillSelect('s-region' , getSettingsState().regions, site.region ?? []);
-  fillSelect('s-located', getSettingsState().located, site.located ?? []);
-  _renderContactList(site.contacts ?? []);
-  _renderShifts('day',   site.shifts?.day   ?? [], duties);
-  _renderShifts('night', site.shifts?.night ?? [], duties);
+  _renderDutyRows('日班', (site.duties ?? []).filter(d => d.shift === '日班'), duties);
+  _renderDutyRows('夜班', (site.duties ?? []).filter(d => d.shift === '夜班'), duties);
+
   openModal('site-modal');
 }
 
 async function saveSite() {
   try {
-    const fields = [
-      { key: 'name',      id: 's-name',      errMsg: '請填寫名稱', valueType: 'text' },
-      { key: 'shortName', id: 's-shortName', errMsg: '請填寫簡稱', valueType: 'text' },
-      { key: 'address',   id: 's-address',   errMsg: '請填寫地址', valueType: 'text' },
-      { key: 'phone',     id: 's-phone',     errMsg: '請填寫社區電話', valueType: 'text' },
-      { key: 'region',    id: 's-region',    errMsg: '請選擇轄區', valueType: 'select' },
-      { key: 'located',   id: 's-located',   errMsg: '請選擇駐地', valueType: 'select' },
-    ];
+    const fullName  = document.getElementById('s-name').value.trim();
+    const shortName = document.getElementById('s-shortName').value.trim();
+    const city      = document.getElementById('s-city').value;
+    const dist      = document.getElementById('s-dist').value;
+    const addr      = document.getElementById('s-addr').value.trim();
+    const tel       = document.getElementById('s-tel').value.trim();
+    const region    = document.getElementById('s-region').value;
+    const located   = document.getElementById('s-located').value;
+
+    const errors = [];
+    if (!fullName)  errors.push('請填寫名稱');
+    if (!shortName) errors.push('請填寫簡稱');
+    if (!addr)      errors.push('請填寫詳細地址');
+    if (!tel)       errors.push('請填寫社區電話');
+    if (!region)    errors.push('請選擇轄區');
+    if (!located)   errors.push('請選擇駐地');
+    if (errors.length > 0) throw new ValidationError(errors);
 
     const data = {
-      id: _editingSiteId ?? crypto.randomUUID(),
-      contacts: _collectContacts(),
-      shifts: { day: _collectShifts('day'), night: _collectShifts('night') },
-      email: document.getElementById('s-email').value.trim(),
-      note: document.getElementById('s-note').value.trim(),
-      contractDate: document.getElementById('s-contractDate').value,
-      districtDate: document.getElementById('s-districtDate').value,
+      id:       _editingSiteId ?? crypto.randomUUID(),
+      name:     [fullName, shortName, null],
+      addr:     [city, dist, addr],
+      tel,
+      region,
+      located,
+      email:    document.getElementById('s-email')?.value.trim() ?? '',
+      note:     document.getElementById('s-note').value.trim(),
+      CEDate:   document.getElementById('s-CEDate').value,
+      HOADate:  document.getElementById('s-HOADate').value,
+      duties:   _collectDuties(),
     };
-    const errors = [];
 
-    for (const { key, id, errMsg, valueType } of fields) {
-      const el = document.getElementById(id);
-      const value = valueType === 'select' ? el.value : el.value.trim();
-      
-      data[key] = value; // 直接灌進 data 物件
-      if (!value) errors.push(errMsg);
-    }
-
-    if (errors.length > 0) { throw new ValidationError(errors); }
+    // 產生不重複代表字
+    data.name[2] = assignRepChar(data, getSitesState());
 
     const sites = getSitesState();
     await setSitesState(
-      _editingSiteId ? sites.map(s => s.id === _editingSiteId ? data : s)
-                     : [...sites, data]
+      _editingSiteId
+        ? sites.map(s => s.id === _editingSiteId ? data : s)
+        : [...sites, data]
     );
     closeModal('site-modal');
     renderSites();
@@ -199,97 +197,88 @@ async function saveSite() {
   }
 }
 
-// ── 聯絡人 ────────────────────────────────────
-function _renderContactList(contacts) {
-  const list = document.getElementById('contacts-list');
-  list.innerHTML = '';
-  for (const c of contacts) list.appendChild(makeContactRow(c));
-}
-
-export function makeContactRow(item = {}) {
-  const css = 'padding:6px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;width:100%;';
-  const row = document.createElement('div');
-  row.className = 'sub-row contact-row';
-  row.innerHTML = `
-    <input type="text" placeholder="姓名" value="${item.name ?? ''}" style="${css}">
-    <input type="text" placeholder="職稱" value="${item.job  ?? ''}" style="${css}">
-    <input type="text" placeholder="電話" value="${item.tel  ?? ''}" style="${css}">
-    <input type="text" placeholder="備註" value="${item.note ?? ''}" style="${css}">
-    <button style="background:transparent;border:none;color:var(--text2);cursor:pointer;font-size:14px;padding:4px;">✕</button>`;
-  row.querySelector('button').addEventListener('click', () => row.remove());
-  return row;
-}
-
-function _collectContacts() {
-  return [...document.querySelectorAll('#contacts-list .contact-row')].map(row => {
-    const inputs = row.querySelectorAll('input');
-    return { name: inputs[0].value.trim(), job: inputs[1].value.trim(), tel: inputs[2].value.trim(), note: inputs[3].value.trim() };
-  }).filter(c => c.name || c.tel);
-}
-
-// ── Shifts 編輯器 ─────────────────────────────
-function _renderShifts(period, shifts, duties) {
-  const container = document.getElementById(`shifts-${period}`);
+// ── 勤務列 ────────────────────────────────────
+function _renderDutyRows(shift, rows, duties) {
+  const containerId = shift === '日班' ? 'duties-day-grid' : 'duties-night-grid';
+  const container   = document.getElementById(containerId);
+  if (!container) return;
   container.innerHTML = '';
-  shifts.forEach((shift, i) => container.appendChild(_makeShiftRow(period, i, shift, duties)));
+  rows.forEach((row, i) => container.appendChild(_makeDutyRow(shift, i, row, duties)));
 }
 
-function _makeShiftRow(period, idx, shift, duties) {
-  const row = document.createElement('div');
-  row.className = 'shift-row';
-  row.dataset.idx = idx;
+function _makeDutyRow(shift, idx, row, duties) {
+  const el        = document.createElement('div');
+  el.className    = 'duty-row';
+  el.dataset.idx  = idx;
+  el.dataset.shift = shift;
 
   const label = document.createElement('span');
-  label.className = 'shift-label';
-  label.textContent = period === 'day' ? `日${idx + 1}` : `夜${idx + 1}`;
+  label.className   = 'duty-label';
+  label.textContent = `${shift === '日班' ? '日' : '夜'}${idx + 1}`;
 
   const dutySelect = document.createElement('select');
   dutySelect.style.cssText = 'padding:6px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;';
   for (const d of duties) {
     const opt = document.createElement('option');
     opt.value = d; opt.textContent = d;
-    if (d === shift.duty) opt.selected = true;
+    if (d === row.duty) opt.selected = true;
     dutySelect.appendChild(opt);
   }
 
   const countInput = document.createElement('input');
-  countInput.type = 'number'; countInput.min = 1; countInput.max = 99;
-  countInput.value = shift.count ?? 1;
-  countInput.style.cssText = 'padding:6px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;width:100%;';
+  countInput.type  = 'number'; countInput.min = 1; countInput.max = 99;
+  countInput.value = row.count ?? 1;
+  countInput.style.cssText = 'padding:6px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;width:60px;';
 
   const delBtn = document.createElement('button');
-  delBtn.textContent = '✕';
+  delBtn.textContent   = '✕';
   delBtn.style.cssText = 'background:transparent;border:none;color:var(--text2);cursor:pointer;font-size:14px;padding:4px;';
-  delBtn.addEventListener('click', () => { row.remove(); _reIndexShiftLabels(period); });
+  delBtn.addEventListener('click', () => {
+    el.remove();
+    _reIndexDutyLabels(shift);
+  });
 
-  row.append(label, dutySelect, countInput, delBtn);
-  return row;
+  el.append(label, dutySelect, countInput, delBtn);
+  return el;
 }
 
-function addShiftRow(period) {
-  const container = document.getElementById(`shifts-${period}`);
-  if (container.children.length >= 8) return;
+function _addDutyRow(shift) {
+  const containerId = shift === '日班' ? 'duties-day-grid' : 'duties-night-grid';
+  const container   = document.getElementById(containerId);
+  if (!container || container.children.length >= 8) return;
   const duties = getSettingsState().duties ?? [];
-  container.appendChild(_makeShiftRow(period, container.children.length, { duty: duties[0], count: 1 }, duties));
+  container.appendChild(_makeDutyRow(shift, container.children.length, { duty: duties[0], count: 1 }, duties));
 }
 
-function _reIndexShiftLabels(period) {
-  [...document.getElementById(`shifts-${period}`).children].forEach((row, i) => {
+function _reIndexDutyLabels(shift) {
+  const containerId = shift === '日班' ? 'duties-day-grid' : 'duties-night-grid';
+  const prefix      = shift === '日班' ? '日' : '夜';
+  const container   = document.getElementById(containerId);
+  if (!container) return;
+  [...container.children].forEach((row, i) => {
     row.dataset.idx = i;
-    row.querySelector('.shift-label').textContent = period === 'day' ? `日${i + 1}` : `夜${i + 1}`;
+    row.querySelector('.duty-label').textContent = `${prefix}${i + 1}`;
   });
 }
 
-function _collectShifts(period) {
-  const sites = getSitesState();
-  const existingShifts = _editingSiteId
-    ? (sites.find(s => s.id === _editingSiteId)?.shifts[period] ?? [])
+function _collectDuties() {
+  const sites    = getSitesState();
+  const existing = _editingSiteId
+    ? (sites.find(s => s.id === _editingSiteId)?.duties ?? [])
     : [];
-  return [...document.getElementById(`shifts-${period}`).children].map(row => {
-    const duty  = row.querySelector('select').value;
-    const count = parseInt(row.querySelector('input').value) || 1;
-    const prev  = existingShifts.find(s => s.duty === duty);
-    const last  = (prev && prev.count === count) ? prev.last : count;
-    return { duty, count, last };
-  });
+
+  const result = [];
+  for (const shift of ['日班', '夜班']) {
+    const containerId = shift === '日班' ? 'duties-day-grid' : 'duties-night-grid';
+    const container   = document.getElementById(containerId);
+    if (!container) continue;
+    for (const row of container.children) {
+      const duty  = row.querySelector('select').value;
+      const count = parseInt(row.querySelector('input').value) || 1;
+      const prev  = existing.find(d => d.shift === shift && d.duty === duty);
+      const last  = (prev && prev.count === count) ? prev.last : count;
+      result.push({ shift, duty, count, last });
+    }
+  }
+  return result;
 }

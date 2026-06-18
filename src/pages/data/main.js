@@ -3,15 +3,19 @@
 // 資料頁進入點
 // ════════════════════════════════════════════
 
-import { subscribe, getSettingsState, setSettingsState } from '../../core/store/globalState.js';
-import { setupCardToggles, debounce }                    from '../../shared/utils/dom.js';
+import { subscribe }                              from '../../core/store/globalState.js';
+import { setupCardToggles }                       from '../../shared/utils/dom.js';
 import { mount as mountSite,  
-         unmount as unmountSite, renderSites }           from './components/siteTab.js';
+         unmount as unmountSite, renderSites }    from './components/siteTab.js';
 import { mount as mountEmp, 
          unmount as unmountEmp, 
-         renderEmployees, refreshMapSelects }            from './components/employeeTab.js';
-import { renderDeadlinePanel }                           from './components/deadlinePanel.js';
-import { showHint }                                      from '../../shared/utils/notify.js';
+         renderEmployees }                        from './components/employeeTab.js';
+import { mount as mountOverview,
+         unmount as unmountOverview, 
+         renderDeadlinePanel, refreshMapSelects } from './components/overviewTab.js';
+import { mount as mountRatio,
+         unmount as unmountRatio,
+         renderRatioPanel }                       from './components/ratioPanel.js';
 
 const _cleanups = [];
 
@@ -31,11 +35,16 @@ export async function mount() {
   setupCardToggles('#page-data', _cleanups);
   mountSite();
   mountEmp();
-  _setupDeadlinePanel();
+  mountOverview();
+  mountRatio();
+
+  // 初始渲染
+  renderRatioPanel();
 
   const unsub = subscribe(key => {
-    if (key === 'sites')     renderSites();
-    if (key === 'employees') renderEmployees();
+    if (key === 'sites')     { renderSites(); renderRatioPanel(); }
+    if (key === 'employees') { renderEmployees(); renderRatioPanel(); }
+    if (key === 'settings')  { renderRatioPanel(); }
     if (key === 'sites' || key === 'employees' || key === 'schedule') renderDeadlinePanel();
   });
   _cleanups.push(unsub);
@@ -44,32 +53,8 @@ export async function mount() {
 export function unmount() {
   unmountSite();
   unmountEmp();
+  unmountOverview();
+  unmountRatio();
   _cleanups.forEach(fn => fn());
   _cleanups.length = 0;
-}
-
-// ── Deadline Panel ────────────────────────────
-function _setupDeadlinePanel() {
-  const input = document.getElementById('deadline-threshold');
-  if (input) {
-    // 從 storage 還原上次的天數
-    input.value = getSettingsState().deadlineThreshold ?? 90;
-
-    // 更新顯示防抖
-    const debouncedShowHint = debounce(() => {
-      showHint('deadline-hint');
-    }, 600);
-
-    const h = async () => {
-      const val = parseInt(input.value);
-      if (!val || val < 1) return;
-      await setSettingsState({ deadlineThreshold: val });
-      renderDeadlinePanel();
-      debouncedShowHint();
-    };
-
-    input.addEventListener('input', h);
-    _cleanups.push(() => input.removeEventListener('input', h));
-  }
-  renderDeadlinePanel();
 }

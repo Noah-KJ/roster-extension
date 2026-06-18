@@ -55,15 +55,11 @@ async function exportSchedule(format) {
   try {
     const raw       = await chrome.storage.local.get(null);
     const settings  = raw[KEYS.SETTINGS]  ?? {};
+    const sites     = raw[KEYS.SITES]     ?? [];
+    const employees = raw[KEYS.EMPLOYEES] ?? [];
     const month     = settings.month ?? '';
 
     if (!month) return { ok: false, error: '請先在設定頁選擇排班月份' };
-
-    // 過濾過期據點和人員（與 globalState._rebuildDerived 邏輯一致）
-    const allSites     = raw[KEYS.SITES]     ?? [];
-    const allEmployees = raw[KEYS.EMPLOYEES] ?? [];
-    const sites        = allSites.filter(s => !s.CEDate    || s.CEDate.slice(0, 7)    >= month);
-    const employees    = allEmployees.filter(e => !e.lastDate || e.lastDate.slice(0, 7) >= month);
 
     const allSchedules = raw[KEYS.SCHEDULES] ?? {};
     const schedule     = allSchedules[month] ?? {};
@@ -170,7 +166,7 @@ function _download(content, filename, mime) {
 // ── 班表資料轉換輔助 ──────────────────────────
 function _buildCommunityData(sites, employees, schedule) {
   return sites.map(site => ({
-    site: site.shortName || site.name,
+    site: site.name[1] || site.name[0],
     rows: employees.map(emp => ({
       name:  emp.name,
       days:  schedule[site.id]?.[emp.id] ?? {},
@@ -182,7 +178,7 @@ function _buildEmployeeData(sites, employees, schedule) {
   return employees.map(emp => ({
     name: emp.name,
     rows: sites.map(site => ({
-      site: site.shortName || site.name,
+      site: site.name[1] || site.name[0],
       days: schedule[site.id]?.[emp.id] ?? {},
     })),
   }));
@@ -196,7 +192,7 @@ function _buildBigData(sites, employees, schedule) {
       if (!dayMap) continue;
       for (const [d, val] of Object.entries(dayMap)) {
         if (!days[d]) days[d] = val === 'work' || val === 'dash'
-          ? (site.shortName || site.name).charAt(0)
+          ? (site.name[2] || site.name[1]?.[0] || site.name[0]?.[0] || '?')
           : val;
       }
     }

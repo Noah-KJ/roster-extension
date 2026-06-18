@@ -4,13 +4,13 @@
 // ════════════════════════════════════════════
 
 import { getSettingsState, setSettingsState } from '../../core/store/globalState.js';
-import { setupCardToggles }                   from '../../shared/utils/dom.js';
+import { setupCardToggles, bindEl }           from '../../shared/utils/dom.js';
 import { showHint }                           from '../../shared/utils/notify.js';
 import { setupChipManager }                   from './components/chipManager.js';
 import { setupCalendar, renderCalendar }      from './components/calendarView.js';
 import {
   DEFAULT_LEAVE_TYPES, DEFAULT_DUTIES,
-  DEFAULT_REGIONS, DEFAULT_LOCATED,
+  DEFAULT_REGIONS, DEFAULT_LOCATED, DEFAULT_ONDUTY_KEY,
 } from '../../shared/constants.js';
 
 const _cleanups = [];
@@ -25,8 +25,6 @@ export async function mount() {
 
   document.getElementById('org-name').value       = settings.orgName ?? '';
   document.getElementById('schedule-month').value = settings.month   ?? '';
-  document.getElementById('on-duty-key').value    = settings.onDutyKey?.[0] ?? '';
-  document.getElementById('non-empty-key').value  = settings.onDutyKey?.[1] ?? '';
 
   const [y, m] = (settings.month ?? `${TODAY.getFullYear()}-${String(TODAY.getMonth()+1).padStart(2,'0')}`).split('-');
   _calCtx.calYear  = parseInt(y);
@@ -34,7 +32,6 @@ export async function mount() {
 
   setupCardToggles('#page-settings', _cleanups);
   _setupBasic();
-  _setupKey();
   _setupChips();
   setupCalendar(_calCtx);
 }
@@ -61,21 +58,17 @@ function _setupBasic() {
     showHint('basic-hint');
   };
   el.addEventListener('click', h);
-  _cleanups.push(() => el.removeEventListener('click', h));
-}
 
-// ── 排班符號 ──────────────────────────────────
-function _setupKey() {
-  const el = document.getElementById('btn-save-key');
-  if (!el) return;
-  const h = async () => {
-    const onDutyKey = [ document.getElementById('on-duty-key').value.trim(), 
-                        document.getElementById('non-empty-key').value.trim()
-                      ];
+  bindEl('btn-save-key', 'click', async () => {
+    const onDutyKey = [
+      document.getElementById('on-duty-key').value   || DEFAULT_ONDUTY_KEY[0],
+      document.getElementById('non-empty-key').value || DEFAULT_ONDUTY_KEY[1],
+      document.getElementById('empty-key').value     || DEFAULT_ONDUTY_KEY[2],
+    ];
     await setSettingsState({ onDutyKey });
-    showHint('key-hint');
-  };
-  el.addEventListener('click', h);
+    showHint('basic-hint');
+  }, _cleanups);
+  
   _cleanups.push(() => el.removeEventListener('click', h));
 }
 
