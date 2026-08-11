@@ -1,51 +1,54 @@
 {
-  "manifest_version": 3,
-  "name": "排班引擎",
-  "version": "3.0.0",
-  "description": "找Noah: pleroma502204@gmail.com",
+	"manifest_version": 3,
+	"name": "排班引擎",
+	"version": "3.0.0",
+	"description": "排班引擎是一個 Chrome 擴充套件，提供排班表的管理、匯入、匯出功能，並支援多種格式的資料處理。",
 
-  "permissions": [
-    "storage",
-    "tabs",
-    "windows",
-    "offscreen",
-    "downloads"
-  ],
-  "host_permissions": [
-    "https://cdn.jsdelivr.net/*"
-  ],
+	"permissions": [
+		"storage",
+		"tabs",
+		"windows",
+		"offscreen",
+		"downloads"
+	],
+	"host_permissions": [
+		"https://cdn.jsdelivr.net/*",
+		"https://tile.openstreetmap.org/*",
+		"https://nominatim.openstreetmap.org/*",
+		"https://router.project-osrm.org/*"
+	],
 
-  "action": {
-    "default_popup": "popup/popup.html",
-    "default_title": "排班引擎"
-  },
+	"action": {
+		"default_popup": "popup/popup.html",
+		"default_title": "排班引擎"
+	},
 
-  "background": {
-    "service_worker": "background.js",
-    "type": "module"
-  },
+	"background": {
+		"service_worker": "background.js",
+		"type": "module"
+	},
 
-  "web_accessible_resources": [
-    {
-      "resources": [
-        "index.html",
-        "app.css",
-        "app.js",
-        "offscreen/offscreen.html",
-        "offscreen/offscreen.js",
-        "src/pages/**/*",
-        "src/shared/**/*",
-        "src/core/**/*",
-        "src/libs/*",
-        "ico/*"
-      ],
-      "matches": ["<all_urls>"]
-    }
-  ],
+	"web_accessible_resources": [
+		{
+		"resources": [
+			"index.html",
+			"app.css",
+			"app.js",
+			"offscreen/offscreen.html",
+			"offscreen/offscreen.js",
+			"src/pages/**/*",
+			"src/shared/**/*",
+			"src/core/**/*",
+			"src/libs/**",
+			"ico/*"
+		],
+		"matches": ["<all_urls>"]
+		}
+	],
 
-  "icons": {
-    "16":  "ico/chestnut_16x16.png",
-    "32":  "ico/chestnut_32x32.png",
-    "128": "ico/chestnut_128x128.png"
-  }
+	"icons": {
+		"16":  "ico/chestnut_16x16.png",
+		"32":  "ico/chestnut_32x32.png",
+		"128": "ico/chestnut_128x128.png"
+	}
 }

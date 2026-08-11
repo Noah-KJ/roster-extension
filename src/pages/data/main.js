@@ -46,6 +46,7 @@ export async function mount() {
     if (key === 'employees') { renderEmployees(); renderRatioPanel(); }
     if (key === 'settings')  { renderRatioPanel(); }
     if (key === 'sites' || key === 'employees' || key === 'schedule') renderDeadlinePanel();
+    if (key === 'sites' || key === 'employees') refreshMapSelects();
   });
   _cleanups.push(unsub);
 }

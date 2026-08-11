@@ -7,6 +7,7 @@ import { getSitesState, setSitesState,
          getSettingsState }              from '../../../core/store/globalState.js';
 import { SITE_TEMPLATE }                 from '../../../shared/constants.js';
 import { showConfirm, showToastMsg }     from '../../../shared/utils/notify.js';
+import { geocodeAddress, addrKey }       from '../../../shared/utils/geocode.js';
 import { assignRepChar }                 from '../../../core/services/siteService.js';
 import { ValidationError }               from './validation.js';
 import {
@@ -177,6 +178,17 @@ async function saveSite() {
 
     // 產生不重複代表字
     data.name[2] = assignRepChar(data, getSitesState());
+
+    // 地址有變更，或尚未有座標（例如舊資料）→ 重新地理編碼取得經緯度
+    // 供「通勤地圖」使用；地址沒變則沿用既有座標，避免重複呼叫外部服務
+    const prevSite = _editingSiteId ? getSitesState().find(s => s.id === _editingSiteId) : null;
+    const needsGeocode = !prevSite || addrKey(prevSite.addr) !== addrKey(data.addr) || !prevSite.geo;
+    if (needsGeocode) {
+      data.geo = await geocodeAddress(...data.addr);
+      if (!data.geo) showToastMsg('地址定位失敗，通勤地圖將暫時無法顯示此據點', true);
+    } else {
+      data.geo = prevSite.geo;
+    }
 
     const sites = getSitesState();
     await setSitesState(

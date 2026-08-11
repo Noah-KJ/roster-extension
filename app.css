@@ -581,6 +581,66 @@ main { flex: 1;  overflow: visible; display: flex; flex-direction: column; }
 }
 .map-info-item p { font-size: 1rem; color: var(--text); }
 
+/* ── Commute map（總覽分頁，輻射狀通勤地圖） ── */
+.map-mode-toggle { display: flex; gap: 8px; flex-wrap: wrap; }
+.map-mode-btn {
+  padding: 8px 14px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text2);
+  font-size: var(--fs-2xs);
+  font-family: var(--font);
+  cursor: pointer;
+  transition: background .2s, color .2s, border-color .2s;
+}
+.map-mode-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg);
+  font-weight: 600;
+}
+.map-fetch-hint {
+  font-size: var(--fs-3xs);
+  color: var(--text2);
+  min-height: 1em;
+  margin-top: 8px;
+}
+.commute-map {
+  display: none;
+  width: 100%;
+  height: 440px;
+  margin-top: 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg3);
+}
+.commute-route-list {
+  list-style: none;
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.commute-route-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: var(--fs-2xs);
+  color: var(--text);
+}
+.commute-route-list .route-meta { color: var(--text2); white-space: nowrap; }
+.commute-route-list li.route-fallback .route-meta { color: var(--warn); }
+
+.leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--bg2); color: var(--text); }
+.leaflet-container a.leaflet-popup-close-button { color: var(--text2); }
+
 /* ── Duties editor ── */
 .duties-grid { display: flex; flex-direction: row; gap: 6px; }
 .sub-row{

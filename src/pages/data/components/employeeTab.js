@@ -1,6 +1,7 @@
 // ════════════════════════════════════════════
 // pages/data/components/employeeTab.js
 // 人員列表 + Modal CRUD
+// （「預排據點」子清單的連動 select 邏輯拆到 arrSitesEditor.js）
 // ════════════════════════════════════════════
 
 import {
@@ -10,13 +11,16 @@ import {
 } from '../../../core/store/globalState.js';
 import { SHIFT, MOBILITY, EMPLOYEE_TEMPLATE } from '../../../shared/constants.js';
 import { recalcLast }                    from '../../../core/services/siteService.js';
-import { getArrSiteCandidates }          from '../../../core/services/employeeService.js';
 import {
   openModal, closeModal, bindModalClose,
   fillRegionSelects, bindEl, fillSelect,
 } from '../../../shared/utils/dom.js';
 import { showConfirm, showToastMsg } from '../../../shared/utils/notify.js';
+import { geocodeAddress, addrKey }   from '../../../shared/utils/geocode.js';
 import { ValidationError }           from './validation.js';
+import {
+  renderArrList, addArrRow, collectArrList, refreshAllArrRows,
+} from './arrSitesEditor.js';
 
 let _editingEmpId = null;
 const _cleanups = [];
@@ -28,7 +32,7 @@ export function mount() {
   bindEl('emp-search',          'input',  renderEmployees, _cleanups);
   bindEl('emp-shift-filter',    'change', renderEmployees, _cleanups);
   bindEl('emp-mobility-filter', 'change', renderEmployees, _cleanups);
-  bindEl('btn-add-arrSites',    'click',  () => _addArrRow(), _cleanups);
+  bindEl('btn-add-arrSites',    'click',  () => addArrRow(), _cleanups);
 
   fillSelect('emp-shift-filter',    SHIFT,    '', '全部班段');
   fillSelect('emp-mobility-filter', MOBILITY, '', '全部班別');
@@ -149,7 +153,7 @@ export function openEmpModal(id) {
   fillSelect('e-mobility', MOBILITY, emp.mobility ?? MOBILITY[1]);
 
   _renderDutyChips(duties, emp.duties ?? []);
-  _renderArrList(emp.arrSites ?? []);
+  renderArrList(emp.arrSites ?? [], id);
 
   openModal('emp-modal');
 }
@@ -171,7 +175,7 @@ function _getEmployeeFormData() {
       document.getElementById('e-addr').value.trim(),
     ],
     duties:   [...document.querySelectorAll('#e-duties input:checked')].map(cb => cb.value),
-    arrSites: _collectArrList(),
+    arrSites: collectArrList(),
   };
 }
 
@@ -206,6 +210,17 @@ async function saveEmployee() {
     const errors = _validateEmployeeData(data);
     if (errors.length > 0) throw new ValidationError(errors);
 
+    // 地址有變更，或尚未有座標（例如舊資料）→ 重新地理編碼取得經緯度
+    // 供「通勤地圖」使用；地址沒變則沿用既有座標，避免重複呼叫外部服務
+    const prevEmp = _editingEmpId ? getEmployeesState().find(e => e.id === _editingEmpId) : null;
+    const needsGeocode = !prevEmp || addrKey(prevEmp.addr) !== addrKey(data.addr) || !prevEmp.geo;
+    if (needsGeocode) {
+      data.geo = await geocodeAddress(...data.addr);
+      if (!data.geo) showToastMsg('地址定位失敗，通勤地圖將暫時無法顯示此人員', true);
+    } else {
+      data.geo = prevEmp.geo;
+    }
+
     const employees = getEmployeesState();
     const updated = _editingEmpId
       ? employees.map(e => e.id === _editingEmpId ? data : e)
@@ -237,219 +252,8 @@ function _renderDutyChips(duties, selected) {
     chip.innerHTML = `<input type="checkbox" value="${d}" ${checked ? 'checked' : ''}>${d}`;
     chip.querySelector('input').addEventListener('change', () => {
       chip.classList.toggle('selected');
-      _refreshAllArrRows();
+      refreshAllArrRows();
     });
     grid.appendChild(chip);
   }
-}
-
-// ── 預排列（arrSites）────────────────────────
-const ROW_CSS = 'padding:6px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;';
-
-function _renderArrList(items) {
-  const list = document.getElementById('arrSites-list');
-  list.innerHTML = '';
-  items.forEach(item => list.appendChild(_makeArrRow(item)));
-}
-
-function _addArrRow() {
-  const list = document.getElementById('arrSites-list');
-  list.appendChild(_makeArrRow({}));
-}
-
-/**
- * 建立一列「預排」：[據點 select] [班段 select] [勤務 select] [✕]
- * 三個 select 互相連動：
- *   - 據點變更 → 重算可用班段（依 site.duties 與人員 shift/duties 交集）
- *   - 班段變更 → 重算可用勤務
- */
-function _makeArrRow(item) {
-  const row = document.createElement('div');
-  row.className = 'sub-row arrSites-row';
-
-  const siteSelect  = document.createElement('select');
-  siteSelect.className   = 'arr-site-select';
-  siteSelect.style.cssText = ROW_CSS;
-
-  const shiftSelect = document.createElement('select');
-  shiftSelect.className   = 'arr-shift-select';
-  shiftSelect.style.cssText = ROW_CSS;
-
-  const dutySelect  = document.createElement('select');
-  dutySelect.className   = 'arr-duty-select';
-  dutySelect.style.cssText = ROW_CSS;
-
-  const delBtn = document.createElement('button');
-  delBtn.textContent   = '✕';
-  delBtn.style.cssText = 'background:transparent;border:none;color:var(--text2);cursor:pointer;font-size:14px;padding:4px;flex-shrink:0;';
-  delBtn.addEventListener('click', () => row.remove());
-
-  row.append(siteSelect, shiftSelect, dutySelect, delBtn);
-
-  // 初始填充
-  _fillArrSiteOptions(row, item.siteId);
-  _fillArrShiftOptions(row, item.shift);
-  _fillArrDutyOptions(row, item.duty);
-
-  siteSelect.addEventListener('change', () => {
-    _fillArrShiftOptions(row);
-    _fillArrDutyOptions(row);
-  });
-  shiftSelect.addEventListener('change', () => {
-    _fillArrDutyOptions(row);
-  });
-
-  return row;
-}
-
-/** 取得目前 modal 內的人員班段與已勾選勤務 */
-function _getCurrentEmpContext() {
-  return {
-    empShift:  document.getElementById('e-shift')?.value ?? '',
-    empDuties: [...document.querySelectorAll('#e-duties input:checked')].map(cb => cb.value),
-    mobility:  document.getElementById('e-mobility')?.value ?? '',
-  };
-}
-
-/** 收集除自己以外，其他列已選的 { siteId, shift, duty } */
-function _collectOtherArr(excludeRow) {
-  return [...document.querySelectorAll('#arrSites-list .sub-row')]
-    .filter(r => r !== excludeRow)
-    .map(r => ({
-      siteId: r.querySelector('.arr-site-select')?.value ?? '',
-      shift:  r.querySelector('.arr-shift-select')?.value ?? '',
-      duty:   r.querySelector('.arr-duty-select')?.value ?? '',
-    }))
-    .filter(a => a.siteId);
-}
-
-/** 填據點選單：依 candidates 計算可選據點（去重） */
-function _fillArrSiteOptions(row, selectedSiteId = '') {
-  const siteSelect = row.querySelector('.arr-site-select');
-  const sites      = getSitesState();
-  const { empShift, empDuties, mobility } = _getCurrentEmpContext();
-  const others     = _collectOtherArr(row);
-
-  const candidates = getArrSiteCandidates({
-    sites, empShift, empDuties, mobility,
-    forbSiteIds: sites.filter(s => (s.forbEmp ?? []).some(f => f.empId === _editingEmpId)).map(s => s.id),
-    alreadyArr: others,
-  });
-
-  // 去重據點 id
-  const siteIds = [...new Set(candidates.map(c => c.site.id))];
-
-  siteSelect.innerHTML = '<option value="">選擇據點</option>';
-  for (const id of siteIds) {
-    const site = sites.find(s => s.id === id);
-    const opt = document.createElement('option');
-    opt.value = id; opt.textContent = site.name[1] || site.name[0];
-    if (id === selectedSiteId) opt.selected = true;
-    siteSelect.appendChild(opt);
-  }
-
-  // 若原本選的據點已不在候選中（例如編輯既有資料），仍保留顯示
-  if (selectedSiteId && !siteIds.includes(selectedSiteId)) {
-    const site = sites.find(s => s.id === selectedSiteId);
-    if (site) {
-      const opt = document.createElement('option');
-      opt.value = selectedSiteId; opt.textContent = site.name[1] || site.name[0];
-      opt.selected = true;
-      siteSelect.appendChild(opt);
-    }
-  }
-}
-
-/** 填班段選單：依選定據點 + 人員班段交集 */
-function _fillArrShiftOptions(row, selectedShift = '') {
-  const siteSelect  = row.querySelector('.arr-site-select');
-  const shiftSelect = row.querySelector('.arr-shift-select');
-  const siteId = siteSelect.value;
-
-  shiftSelect.innerHTML = '<option value="">班段</option>';
-  if (!siteId) return;
-
-  const sites = getSitesState();
-  const site  = sites.find(s => s.id === siteId);
-  if (!site) return;
-
-  const { empShift, empDuties, mobility } = _getCurrentEmpContext();
-  const others    = _collectOtherArr(row);
-  const candidates = getArrSiteCandidates({
-    sites, empShift, empDuties, mobility,
-    forbSiteIds: [],
-    alreadyArr: others,
-  }).filter(c => c.site.id === siteId);
-
-  const shifts = [...new Set(candidates.map(c => c.shift))];
-  for (const s of shifts) {
-    const opt = document.createElement('option');
-    opt.value = s; opt.textContent = s;
-    if (s === selectedShift) opt.selected = true;
-    shiftSelect.appendChild(opt);
-  }
-  if (selectedShift && !shifts.includes(selectedShift)) {
-    const opt = document.createElement('option');
-    opt.value = selectedShift; opt.textContent = selectedShift;
-    opt.selected = true;
-    shiftSelect.appendChild(opt);
-  }
-}
-
-/** 填勤務選單：依選定據點 + 班段交集 */
-function _fillArrDutyOptions(row, selectedDuty = '') {
-  const siteSelect  = row.querySelector('.arr-site-select');
-  const shiftSelect = row.querySelector('.arr-shift-select');
-  const dutySelect  = row.querySelector('.arr-duty-select');
-  const siteId = siteSelect.value;
-  const shift  = shiftSelect.value;
-
-  dutySelect.innerHTML = '<option value="">選擇勤務</option>';
-  if (!siteId || !shift) return;
-
-  const sites = getSitesState();
-  const { empShift, empDuties, mobility } = _getCurrentEmpContext();
-  const others    = _collectOtherArr(row);
-  const candidates = getArrSiteCandidates({
-    sites, empShift, empDuties, mobility,
-    forbSiteIds: [],
-    alreadyArr: others,
-  }).filter(c => c.site.id === siteId && c.shift === shift);
-
-  const dutiesAvail = [...new Set(candidates.map(c => c.duty))];
-  for (const d of dutiesAvail) {
-    const opt = document.createElement('option');
-    opt.value = d; opt.textContent = d;
-    if (d === selectedDuty) opt.selected = true;
-    dutySelect.appendChild(opt);
-  }
-  if (selectedDuty && !dutiesAvail.includes(selectedDuty)) {
-    const opt = document.createElement('option');
-    opt.value = selectedDuty; opt.textContent = selectedDuty;
-    opt.selected = true;
-    dutySelect.appendChild(opt);
-  }
-}
-
-/** 勤務 chip 變更時，重新刷新所有列的選單（候選池可能改變）*/
-function _refreshAllArrRows() {
-  document.querySelectorAll('#arrSites-list .sub-row').forEach(row => {
-    const siteSelect  = row.querySelector('.arr-site-select');
-    const shiftSelect = row.querySelector('.arr-shift-select');
-    const dutySelect  = row.querySelector('.arr-duty-select');
-    const prevSite  = siteSelect.value;
-    const prevShift = shiftSelect.value;
-    const prevDuty  = dutySelect.value;
-    _fillArrSiteOptions(row, prevSite);
-    _fillArrShiftOptions(row, prevShift);
-    _fillArrDutyOptions(row, prevDuty);
-  });
-}
-
-function _collectArrList() {
-  return [...document.querySelectorAll('#arrSites-list .sub-row')].map(row => ({
-    siteId: row.querySelector('.arr-site-select')?.value ?? '',
-    shift:  row.querySelector('.arr-shift-select')?.value ?? '',
-    duty:   row.querySelector('.arr-duty-select')?.value ?? '',
-  })).filter(a => a.siteId && a.shift && a.duty);
 }

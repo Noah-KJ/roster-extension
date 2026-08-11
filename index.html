@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>排班引擎</title>
   <link rel="stylesheet" href="app.css">
+  <link rel="stylesheet" href="src/libs/leaflet/leaflet.css">
 </head>
 <body>
   <!-- Toast Msg -->
@@ -270,16 +271,26 @@
           </div>
 
           <!-- 通勤地圖 -->
-          <div class="card">
+          <div class="card" id="card-commute-map">
             <div class="card-header">
               <h2>通勤地圖</h2>
+              <div class="card-header-actions">
+                <button class="btn btn-ghost" id="btn-geocode-all">批次定位缺少座標的地址</button>
+                <span class="save-hint" id="geocode-hint">已完成 ✓</span>
+              </div>
             </div>
             <div class="card-body">
               <div class="map-controls">
-                <select id="map-emp-select"><option value="">選擇人員…</option></select>
-                <select id="map-site-select"><option value="">選擇據點…</option></select>
-                <button class="btn btn-primary" id="btn-open-map">開啟 Google Maps</button>
+                <div class="map-mode-toggle" id="map-mode-toggle">
+                  <button type="button" class="map-mode-btn active" data-mode="site">以據點為中心 → 顯示所有人員</button>
+                  <button type="button" class="map-mode-btn" data-mode="employee">以人員為中心 → 顯示已預排據點</button>
+                </div>
+                <select id="map-target-select"><option value="">請先選擇據點…</option></select>
               </div>
+              <p class="map-fetch-hint" id="map-fetch-hint"></p>
+              <div id="commute-map" class="commute-map"></div>
+              <p class="empty-state" id="commute-map-empty">選擇據點或人員後，將顯示輻射狀通勤路線圖</p>
+              <ul class="commute-route-list" id="commute-route-list"></ul>
             </div>
           </div>
         </section>
@@ -517,7 +528,8 @@
   <!-- ════════════════════════════════════════
        外部依賴
   ════════════════════════════════════════ -->
-  <script src="libs/exceljs.min.js"></script>
+  <script src="src/core/store/libs/exceljs.min.js"></script>
+  <script src="src/libs/leaflet/leaflet.js"></script>
   <script type="module" src="app.js"></script>
 
 </body>

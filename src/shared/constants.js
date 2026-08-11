@@ -31,6 +31,7 @@ export const SITE_TEMPLATE = () => ({
   id:       crypto.randomUUID(),
   name:     [], // [全名, 簡稱, 代表字]
   addr:     [], // [縣市, 區域, 詳址]
+  geo:      null, // { lat, lng } | null — 由地址地理編碼取得，供通勤地圖使用
   tel:      '',
   note:     '',
   CEDate:   '',
@@ -46,6 +47,7 @@ export const EMPLOYEE_TEMPLATE = () => ({
   id:        crypto.randomUUID(),
   name:      '',
   addr:      [],     // [縣市, 區域, 詳址]
+  geo:       null,   // { lat, lng } | null — 由地址地理編碼取得，供通勤地圖使用
   tel:       '',
   note:      '',
   days:      1,

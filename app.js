@@ -5,51 +5,48 @@
 import { init }       from './src/core/store/globalState.js';
 import { startClock } from './src/shared/utils/date.js';
 
-const PAGE_MODULES = {
-  data:     () => import('./src/pages/data/main.js'),
-  schedule: () => import('./src/pages/schedule/main.js'),
-  settings: () => import('./src/pages/settings/main.js'),
-};
-
-const PAGE_TEMPLATES = {
-  data:     'tpl-data',
-  schedule: 'tpl-schedule',
-  settings: 'tpl-settings',
+// 將模組與模板合併，提升配置可讀性
+const PAGES = {
+	data:     { mod: () => import('./src/pages/data/main.js'),     tpl: 'tpl-data' },
+	schedule: { mod: () => import('./src/pages/schedule/main.js'), tpl: 'tpl-schedule' },
+	settings: { mod: () => import('./src/pages/settings/main.js'), tpl: 'tpl-settings' },
 };
 
 let _currentUnmount = null;
 
 async function navigate(pageKey) {
-  if (_currentUnmount) {
-    _currentUnmount();
-    _currentUnmount = null;
-  }
+	// 優雅地卸載前一個頁面
+	_currentUnmount?.();
 
-  const root = document.getElementById('page-root');
-  root.innerHTML = '';
+	const page = Object.hasOwn(PAGES, pageKey) ? PAGES[pageKey] : PAGES.settings; // 加入 fallback
+	const root = document.getElementById('page-root');
+	const template = document.getElementById(page.tpl);
 
-  const tpl = document.getElementById(PAGE_TEMPLATES[pageKey]);
-  root.append(tpl.content.cloneNode(true));
+	// 使用 replaceChildren 一步完成清空與插入
+	root.replaceChildren(template.content.cloneNode(true));
 
-  const mod = await PAGE_MODULES[pageKey]();
-  _currentUnmount = mod.unmount ?? null;
-  await mod.mount();
+	const mod = await page.mod();
+	_currentUnmount = mod.unmount ?? null;
+	await mod.mount();
 
-  document.querySelectorAll('.nav-btn').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.page === pageKey);
-  });
+	// 更新導覽列狀態
+	document.querySelectorAll('.nav-btn').forEach(btn => {
+		btn.classList.toggle('active', btn.dataset.page === pageKey);
+	});
 }
 
 function bindSidebarNav() {
-  document.querySelectorAll('.nav-btn').forEach(btn => {
-    btn.addEventListener('click', () => navigate(btn.dataset.page));
-  });
+	// 使用事件代理，減少 Listener 數量並支援動態元素
+	document.body.addEventListener('click', (e) => {
+		const btn = e.target.closest('.nav-btn');
+		if (btn) navigate(btn.dataset.page);
+	});
 }
 
 // ── 啟動 ──────────────────────────────────────
 (async () => {
-  await init();
-  startClock();
-  bindSidebarNav();
-  await navigate('settings');
+	await init();
+	startClock();
+	bindSidebarNav();
+	await navigate('settings');
 })();
