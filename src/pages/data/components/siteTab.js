@@ -4,7 +4,7 @@
 // ════════════════════════════════════════════
 
 import { getSitesState, setSitesState,
-         getSettingsState }              from '../../../core/store/globalState.js';
+         getSettingsState, getEmployeesState } from '../../../core/store/globalState.js';
 import { SITE_TEMPLATE }                 from '../../../shared/constants.js';
 import { showConfirm, showToastMsg }     from '../../../shared/utils/notify.js';
 import { geocodeAddress, addrKey }       from '../../../shared/utils/geocode.js';
@@ -27,6 +27,7 @@ export function mount() {
   bindEl('site-search',         'input',  renderSites, _cleanups);
   bindEl('duties-day-add',      'click',  () => _addDutyRow('日班'), _cleanups);
   bindEl('duties-night-add',    'click',  () => _addDutyRow('夜班'), _cleanups);
+  bindEl('blocks-add',          'click',  _addBlockRow, _cleanups);
 
 
   fillSelect('site-region-filter',  getSettingsState().regions, '', '全部轄區');
@@ -138,6 +139,7 @@ function openSiteModal(id) {
 
   _renderDutyRows('日班', (site.duties ?? []).filter(d => d.shift === '日班'), duties);
   _renderDutyRows('夜班', (site.duties ?? []).filter(d => d.shift === '夜班'), duties);
+  _renderBlockRows(site.forbEmp ?? []);
 
   openModal('site-modal');
 }
@@ -174,6 +176,7 @@ async function saveSite() {
       CEDate:   document.getElementById('s-CEDate').value,
       HOADate:  document.getElementById('s-HOADate').value,
       duties:   _collectDuties(),
+      forbEmp:  _collectBlocks(),
     };
 
     // 產生不重複代表字
@@ -291,6 +294,78 @@ function _collectDuties() {
       const last  = (prev && prev.count === count) ? prev.last : count;
       result.push({ shift, duty, count, last });
     }
+  }
+  return result;
+}
+
+// ── 黑名單（禁排人員）列 ──────────────────────
+function _renderBlockRows(entries) {
+  const container = document.getElementById('blocks-grid');
+  if (!container) return;
+  container.innerHTML = '';
+  entries.forEach(entry => container.appendChild(_makeBlockRow(entry)));
+}
+
+function _addBlockRow() {
+  const container = document.getElementById('blocks-grid');
+  if (!container || container.children.length >= 20) return;
+  container.appendChild(_makeBlockRow({}));
+}
+
+function _makeBlockRow(entry = {}) {
+  const employees = getEmployeesState();
+
+  const el     = document.createElement('div');
+  el.className = 'duty-row';
+
+  const empSelect = document.createElement('select');
+  empSelect.style.cssText = 'padding:6px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;';
+
+  const placeholder = document.createElement('option');
+  placeholder.value = ''; placeholder.textContent = '選擇人員';
+  empSelect.appendChild(placeholder);
+
+  for (const emp of employees) {
+    const opt = document.createElement('option');
+    opt.value = emp.id; opt.textContent = emp.name;
+    if (emp.id === entry.empId) opt.selected = true;
+    empSelect.appendChild(opt);
+  }
+  // 若原本選的人員已被刪除，仍保留顯示（避免資料在儲存時被靜默丟棄）
+  if (entry.empId && !employees.some(e => e.id === entry.empId)) {
+    const opt = document.createElement('option');
+    opt.value = entry.empId; opt.textContent = `${entry.name || '(已刪除人員)'}`;
+    opt.selected = true;
+    empSelect.appendChild(opt);
+  }
+
+  const noteInput = document.createElement('input');
+  noteInput.type        = 'text';
+  noteInput.placeholder = '原因（選填）';
+  noteInput.value       = entry.note ?? '';
+  noteInput.style.cssText = 'flex:1;padding:6px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;';
+
+  const delBtn = document.createElement('button');
+  delBtn.textContent   = '✕';
+  delBtn.style.cssText = 'background:transparent;border:none;color:var(--text2);cursor:pointer;font-size:14px;padding:4px;';
+  delBtn.addEventListener('click', () => el.remove());
+
+  el.append(empSelect, noteInput, delBtn);
+  return el;
+}
+
+function _collectBlocks() {
+  const container = document.getElementById('blocks-grid');
+  if (!container) return [];
+  const employees = getEmployeesState();
+
+  const result = [];
+  for (const row of container.children) {
+    const empId = row.querySelector('select')?.value ?? '';
+    if (!empId) continue;
+    const note = row.querySelector('input')?.value.trim() ?? '';
+    const emp  = employees.find(e => e.id === empId);
+    result.push({ empId, name: emp?.name ?? row.querySelector('select').selectedOptions[0]?.textContent ?? '', note });
   }
   return result;
 }

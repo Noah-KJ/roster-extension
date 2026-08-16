@@ -345,7 +345,7 @@
               <thead>
                 <tr>
                   <th>據點</th><th>轄區</th><th>駐地</th><th>電話</th>
-                  <th>配置勤務</th><th>缺額</th><th>備註</th>
+                  <th>日班配置</th><th>夜班配置</th><th>缺額</th><th>備註</th><th></th>
                 </tr>
               </thead>
               <tbody id="sites-tbody"></tbody>
@@ -386,12 +386,22 @@
             <div class="field"><label>備註</label><input type="text" id="s-note"></div>
           </div>
             
-          <div class="section-label">勤務配置（最多 15 項）</div>
-          <div class="duties-grid" id="duties-grid"></div>
-          <button class="duty-add" id="duties-add">＋ 新增勤務</button>
-          <div class="section-label">黑名單</div>
+          <div class="section-label">勤務配置（各班段最多 8 項）</div>
+          <div class="field-group cols-2">
+            <div class="field">
+              <label>日班</label>
+              <div class="duties-grid" id="duties-day-grid"></div>
+              <button class="duty-add" id="duties-day-add" type="button">＋ 新增日班職位</button>
+            </div>
+            <div class="field">
+              <label>夜班</label>
+              <div class="duties-grid" id="duties-night-grid"></div>
+              <button class="duty-add" id="duties-night-add" type="button">＋ 新增夜班職位</button>
+            </div>
+          </div>
+          <div class="section-label">黑名單（禁止排班至此據點的人員）</div>
           <div class="duties-grid" id="blocks-grid"></div>
-          <button class="duty-add" id="blocks-add">＋ 新增黑名單</button>
+          <button class="duty-add" id="blocks-add" type="button">＋ 新增黑名單</button>
         </div>
         <div class="modal-footer">
           <button class="btn btn-ghost" data-close="site-modal">取消</button>

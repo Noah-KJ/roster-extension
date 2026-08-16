@@ -39,7 +39,8 @@ export const SITE_TEMPLATE = () => ({
   region:   '',
   located:  '',
   duties:   [],   // [{ shift, duty, count, last }]
-  blockEmp: [],   // [{ empId, name, date, note }]
+  forbEmp:  [],   // [{ empId, name, note }] — 禁排此據點的人員名單（黑名單）；
+                  // 由 employeeService.getArrSiteCandidates 的 forbSiteIds 反查使用
 });
 
 // 人員範本
