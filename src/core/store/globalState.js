@@ -68,7 +68,7 @@ export const getSettingsState  = () => structuredClone(_state.settings);
 export const getSitesState     = () => structuredClone(_state.sites);
 export const getEmployeesState = () => structuredClone(_state.employees);
 export const getScheduleState  = () => structuredClone(_state.schedule);
-export const getDerived        = () => structuredClone(_state.derived);
+export const getDerived        = () => structuredClone(_derived);
 
 // ── Setter (加入 Try-Catch 確保穩定性) ──────────────
 export async function setSettingsState(patch) {
